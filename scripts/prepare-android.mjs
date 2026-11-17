@@ -114,12 +114,35 @@ const pkgPath = path.join(root, 'package.json');
 const gradlePath = path.join(androidDir, 'app', 'build.gradle');
 if (fs.existsSync(pkgPath) && fs.existsSync(gradlePath)) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  const ver = String(pkg.version || '1.1.6').split('-')[0];
-  const [maj = 1, min = 1, pat = 6] = ver.split('.').map((n) => parseInt(n, 10) || 0);
+  const ver = String(pkg.version || '1.1.7').split('-')[0];
+  const [maj = 1, min = 1, pat = 7] = ver.split('.').map((n) => parseInt(n, 10) || 0);
   const versionCode = maj * 10000 + min * 100 + pat;
   let gradle = fs.readFileSync(gradlePath, 'utf8');
   gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
   gradle = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${ver}"`);
   fs.writeFileSync(gradlePath, gradle, 'utf8');
   console.log(`Synced Android app version: ${ver} (versionCode ${versionCode})`);
+}
+
+const publicDir = path.join(root, 'public');
+if (fs.existsSync(publicDir) && fs.existsSync(resDir)) {
+  const outerFg = path.join(publicDir, 'ic_launcher_foreground.png');
+  if (fs.existsSync(outerFg)) {
+    const drawableNodpi = path.join(resDir, 'drawable-nodpi');
+    fs.mkdirSync(drawableNodpi, {recursive: true});
+    fs.copyFileSync(outerFg, path.join(drawableNodpi, 'ic_launcher_foreground.png'));
+  }
+  for (const density of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+    const mipmapDir = path.join(resDir, `mipmap-${density}`);
+    fs.mkdirSync(mipmapDir, {recursive: true});
+    const srcLauncher = path.join(publicDir, `ic_launcher_${density}.png`);
+    const srcRound = path.join(publicDir, `ic_launcher_round_${density}.png`);
+    if (fs.existsSync(srcLauncher)) {
+      fs.copyFileSync(srcLauncher, path.join(mipmapDir, 'ic_launcher.png'));
+    }
+    if (fs.existsSync(srcRound)) {
+      fs.copyFileSync(srcRound, path.join(mipmapDir, 'ic_launcher_round.png'));
+    }
+  }
+  console.log('Applied exact Morph outer launcher icons from public/');
 }
