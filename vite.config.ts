@@ -12,7 +12,7 @@ const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 
 export default defineConfig(() => {
   return {
     define: {
-      __MORPH_VERSION__: JSON.stringify(pkg.version || '1.1.6'),
+      __MORPH_VERSION__: JSON.stringify(pkg.version || '1.1.7'),
     },
     plugins: [
       react(),
@@ -61,7 +61,7 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,mjs}'],
-          globIgnores: ['ffmpeg/**', 'android-icons/**'],
+          globIgnores: ['ffmpeg/**', 'android-icons/**', 'ic_launcher*.png'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -141,6 +141,13 @@ export default defineConfig(() => {
           const distAndroidIcons = path.resolve(distDir, 'android-icons');
           if (fs.existsSync(distAndroidIcons)) {
             fs.rmSync(distAndroidIcons, {recursive: true, force: true});
+          }
+          if (fs.existsSync(distDir)) {
+            for (const entry of fs.readdirSync(distDir)) {
+              if (/^ic_launcher.*\.png$/i.test(entry)) {
+                fs.rmSync(path.join(distDir, entry), {force: true});
+              }
+            }
           }
         },
       },
