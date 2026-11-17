@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#101D31" />
+      <stop offset="100%" stop-color="#0A1629" />
+    </linearGradient>
+    <linearGradient id="accent" x1="22" y1="34" x2="106" y2="98" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F46A85" />
+      <stop offset="100%" stop-color="#C82F53" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)" />
+  <path
+    d="M22 92V47c0-5 4-9 9-9s9 4 9 9v3c4.2-5.2 10.5-8 17.5-8 7.8 0 14.3 3.4 18 9.2 4.6-5.8 11.4-9.2 19-9.2 12.2 0 21.5 9.2 21.5 22.5V92c0 5-4 9-9 9s-9-4-9-9V65.5c0-5.4-3.4-9-8.5-9-5.2 0-8.5 3.7-8.5 9.2V92c0 5-4 9-9 9s-9-4-9-9V65.5c0-5.4-3.4-9-8.5-9-5.2 0-8.5 3.7-8.5 9.2V92c0 5-4 9-9 9s-9-4-9-9Z"
+    fill="#6E182D"
+    transform="translate(0 5)"
+  />
+  <path
+    d="M22 92V47c0-5 4-9 9-9s9 4 9 9v3c4.2-5.2 10.5-8 17.5-8 7.8 0 14.3 3.4 18 9.2 4.6-5.8 11.4-9.2 19-9.2 12.2 0 21.5 9.2 21.5 22.5V92c0 5-4 9-9 9s-9-4-9-9V65.5c0-5.4-3.4-9-8.5-9-5.2 0-8.5 3.7-8.5 9.2V92c0 5-4 9-9 9s-9-4-9-9V65.5c0-5.4-3.4-9-8.5-9-5.2 0-8.5 3.7-8.5 9.2V92c0 5-4 9-9 9s-9-4-9-9Z"
+    fill="url(#accent)"
+    stroke="#44101E"
+    stroke-width="3"
+  />
+</svg>

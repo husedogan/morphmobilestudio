@@ -1,0 +1,6 @@
+{
+  "name": "Morph",
+  "description": "Cihaz içi görsel, PDF, video, ses ve arşiv uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

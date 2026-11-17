@@ -1,11 +1,40 @@
-<div align="center">
+# Morph
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+[![Morph Version](https://img.shields.io/badge/Morph-1.1.6%20(Kararl%C4%B1)-42C9D9?style=flat-square)](https://github.com/husodogan/morphmobile/releases)
+[![Android APK](https://img.shields.io/github/v/release/husodogan/morphmobile?label=APK%20Release&color=42C9D9&style=flat-square)](https://github.com/husodogan/morphmobile/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/husodogan/morphmobile/build-apk.yml?branch=main&label=APK%20Build&style=flat-square)](https://github.com/husodogan/morphmobile/actions)
 
-  <h1>Built with AI Studio</h2>
+**Morph**, görsel, PDF, arşiv, video, ses ve belge dosyalarını cihaz içinde dönüştüren **Android APK** ve **Web / PWA** mobil uygulamasıdır. Orijinal dosyalarına dokunmadan yerel olarak çalışır.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## İndirme ve Kurulum
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+- **Android APK:** [Releases](https://github.com/husodogan/morphmobile/releases) sayfasından güncel `Morph-v*.apk` dosyasını indirip kurabilirsin.
+- **Web / PWA:** Tarayıcıdan **Telefona Kur / Ana Ekrana Ekle** ile uygulama olarak yüklenebilir; çevrimdışı çalışır.
 
-</div>
+## Sürüm Sistemi
+
+Sürüm akışı **Morph 1.1.2** ile başlar ve GitHub Actions (`.github/workflows/build-apk.yml`) üzerinden otomatik derlenip yayınlanır:
+
+| Sürüm Türü | Numara Kuralı | Örnekler | GitHub Yayın Türü |
+| :--- | :--- | :--- | :--- |
+| **Kararlı** | Son rakam **çift** | `1.1.2`, `1.1.4`, `1.1.6` | Latest Release |
+| **Beta** | Son rakam **tek** | `1.1.3`, `1.1.5`, `1.1.7` | Pre-release |
+
+Uygulama içindeki **Güncellemeleri Kontrol Et** düğmesi GitHub Releases ve PWA önbelleğini denetleyerek yeni sürüm hazır olduğunda **Güncelleme İndir** seçeneğini sunar.
+
+## Temel Özellikler
+
+- **Görsel & PDF:** Format dönüştürme, sıkıştırma, kırpma, şeffaflık korumalı filtreler ve filigran, kolaj; PDF birleştirme, bölme, döndürme, Türkçe karakter destekli sayfa no/damga ve PDF ↔ Görsel.
+- **Video, Ses & Belge (Cihaz İçi):** Entegre çevrimdışı FFmpeg WASM ile video/ses dönüştürme, kesme, hız/kanal ayarı; DOCX/ODT/XLSX/PPTX/HTML/TXT ↔ PDF ve PDF → DOCX.
+- **Arşiv & Bağlantı İndirici:** ZIP oluşturma/çıkarma ve doğrudan medya/dosya veya kapak görseli indirme (Android `CapacitorHttp` destekli).
+- **Mobil Arayüz:** Android sistem durum çubuğu (safe-area) uyumlu üst bar, basılı tutarken yanan/küle dönüşen ve sürüklenerek köşe değiştiren radyal çark menüsü, çoklu koyu/açık tema seçenekleri ve Türkçe/İngilizce dil desteği.
+
+## Geliştirme Komutları
+
+```bash
+npm install
+npm run dev          # Yerel geliştirme (http://localhost:3000)
+npm run lint         # TypeScript kontrolü
+npm run build        # Üretim derlemesi (dist/)
+npm run android:sync # Web derleme + Android Capacitor ikon/sürüm eşitleme
+```

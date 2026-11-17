@@ -1,0 +1,126 @@
+name: Morph Release & APK
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build Morph Web & Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read Morph version & channel
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          PATCH=$(echo "$VERSION" | awk -F. '{print $3}' | sed 's/[^0-9].*//')
+          if [ $((PATCH % 2)) -eq 1 ]; then
+            PRERELEASE=true
+            CHANNEL="Beta"
+          else
+            PRERELEASE=false
+            CHANNEL="Kararlı"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Android SDK
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> $GITHUB_ENV
+          CMDLINE_BIN=$(find "$SDK_ROOT/cmdline-tools" -maxdepth 2 -name sdkmanager -type f 2>/dev/null | head -n 1)
+          if [ -z "$CMDLINE_BIN" ]; then
+            mkdir -p "$SDK_ROOT/cmdline-tools"
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline.zip
+            unzip -q /tmp/cmdline.zip -d /tmp/cmdline
+            mv /tmp/cmdline/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+            rm -rf /tmp/cmdline.zip /tmp/cmdline
+            CMDLINE_BIN="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$CMDLINE_BIN" --sdk_root="$SDK_ROOT" --licenses >/dev/null 2>&1 || true
+          "$CMDLINE_BIN" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          echo "$SDK_ROOT/platform-tools" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
+
+      - name: TypeScript check & production web build
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Prepare Capacitor Android project
+        env:
+          CAPACITOR_TELEMETRY: 'false'
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          node scripts/prepare-android.mjs
+          npx cap sync android
+
+      - name: Build Android APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Package release assets
+        run: |
+          mkdir -p release-assets
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/Morph-${{ steps.meta.outputs.tag }}.apk"
+          (cd release-assets && sha256sum "Morph-${{ steps.meta.outputs.tag }}.apk" > checksums.sha256)
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Morph-${{ steps.meta.outputs.tag }}-APK
+          path: release-assets/
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Morph ${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.channel }})
+          prerelease: ${{ steps.meta.outputs.prerelease }}
+          generate_release_notes: true
+          body: |
+            ## Morph ${{ steps.meta.outputs.version }} · ${{ steps.meta.outputs.channel }}
+
+            - **Doğrudan APK Kurulumu:** `Morph-${{ steps.meta.outputs.tag }}.apk`
+            - **Sürüm Kuralı:** Çift son numaralar (`1.1.2`, `1.1.4`…) kararlı sürüm, tek son numaralar (`1.1.3`, `1.1.5`…) beta sürümüdür.
+          files: |
+            release-assets/Morph-${{ steps.meta.outputs.tag }}.apk
+            release-assets/checksums.sha256
+          overwrite_files: true

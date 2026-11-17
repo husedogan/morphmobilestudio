@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --paper: #101722;
+  --sidebar: #0B111B;
+  --surface: #182333;
+  --inset: #111C2A;
+  --ink: #F4F7FC;
+  --muted: #AAB8CC;
+  --line: #2B394B;
+  --accent: #E94F78;
+  --accent-end: #42C9D9;
+  --accent-ink: #FFFFFF;
+
+  /* Unified safe-area insets for Capacitor 8 Android (--safe-area-inset-*) and iOS Safari (env) */
+  --morph-safe-top: max(var(--safe-area-inset-top, 0px), env(safe-area-inset-top, 0px));
+  --morph-safe-bottom: max(var(--safe-area-inset-bottom, 0px), env(safe-area-inset-bottom, 0px));
+  --morph-safe-left: max(var(--safe-area-inset-left, 0px), env(safe-area-inset-left, 0px));
+  --morph-safe-right: max(var(--safe-area-inset-right, 0px), env(safe-area-inset-right, 0px));
+}
+
+@layer base {
+  html,
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: var(--paper);
+    color: var(--ink);
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    overscroll-behavior-y: contain;
+  }
+
+  button,
+  a,
+  [role="button"],
+  [role="dialog"] {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .font-mono-num {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.morph-bg {
+  background: linear-gradient(180deg, var(--paper) 0%, var(--sidebar) 100%);
+}
+
+.morph-accent-btn {
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-end) 100%);
+  color: #FFFFFF;
+}
+
+.morph-tonal-btn {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 16%, var(--inset)) 0%,
+    color-mix(in srgb, var(--accent-end) 14%, var(--surface)) 100%
+  );
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  color: var(--ink);
+}
+
+.morph-tonal-btn:hover {
+  border-color: var(--accent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 22%, var(--inset)) 0%,
+    color-mix(in srgb, var(--accent-end) 20%, var(--surface)) 100%
+  );
+}
+
+.morph-engine-card {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent) 6%, var(--surface)) 0%,
+    var(--surface) 48%,
+    color-mix(in srgb, var(--accent-end) 7%, var(--inset)) 100%
+  );
+}
+
+@keyframes morph-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.morph-gear-spin {
+  animation: morph-spin 8s linear infinite;
+}
+
+@keyframes morph-flame-flicker {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 0.92;
+  }
+  33% {
+    transform: scale(1.09) rotate(4deg);
+    opacity: 1;
+  }
+  66% {
+    transform: scale(0.97) rotate(-3deg);
+    opacity: 0.85;
+  }
+}
+
+.morph-flame-flicker {
+  animation: morph-flame-flicker 0.24s ease-in-out infinite;
+}
+
+.pt-safe {
+  padding-top: var(--morph-safe-top);
+}
+
+.pb-safe {
+  padding-bottom: max(0.75rem, var(--morph-safe-bottom));
+}
+
+.morph-fab-bottom {
+  bottom: calc(1.25rem + var(--morph-safe-bottom));
+}
+
+@media (min-width: 1024px) {
+  .morph-fab-bottom {
+    bottom: calc(2rem + var(--morph-safe-bottom));
+  }
+}
+
+.no-touch-callout {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
