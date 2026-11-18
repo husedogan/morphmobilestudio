@@ -146,21 +146,65 @@ if (fs.existsSync(androidIconsSrc) && fs.existsSync(resDir)) {
   console.log('Applied official lowercase "m" Morph icons to Android mipmap & adaptive resources');
 }
 
-// 6. Sync Morph version (e.g. 1.1.9 -> versionName "1.1.9", versionCode 10109) + inject youtubedl-android & NewPipeExtractor Gradle config
+// 6. Sync Morph version + monotonic versionCode + permanent morph-release.p12 signing + native download engines
 const pkgPath = path.join(root, 'package.json');
 const gradlePath = path.join(androidDir, 'app', 'build.gradle');
 if (fs.existsSync(pkgPath) && fs.existsSync(gradlePath)) {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   const ver = String(pkg.version || '1.1.9').split('-')[0];
   const [maj = 1, min = 1, pat = 9] = ver.split('.').map((n) => parseInt(n, 10) || 0);
-  const versionCode = maj * 10000 + min * 100 + pat;
+  const runNum = parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10);
+  const semverCode = maj * 100000 + min * 1000 + pat * 10;
+  // Strictly monotonic on every CI build (always > legacy 10109) so Android allows seamless in-place updates
+  const versionCode = runNum > 0 ? Math.max(200000 + runNum, semverCode + runNum) : semverCode;
+
+  // Copy permanent signing keystore into android/app/morph-release.p12
+  const keystoreSrc = path.join(root, 'scripts', 'android-signing', 'morph-release.p12');
+  const keystoreDst = path.join(androidDir, 'app', 'morph-release.p12');
+  const envKeystoreB64 = (process.env.MORPH_KEYSTORE_BASE64 || '').trim();
+  if (envKeystoreB64) {
+    fs.writeFileSync(keystoreDst, Buffer.from(envKeystoreB64, 'base64'));
+    console.log('Wrote permanent signing keystore from MORPH_KEYSTORE_BASE64');
+  } else if (fs.existsSync(keystoreSrc)) {
+    fs.copyFileSync(keystoreSrc, keystoreDst);
+    console.log('Copied permanent signing keystore scripts/android-signing/morph-release.p12 -> android/app/');
+  }
+
+  const storePass = process.env.MORPH_KEYSTORE_PASSWORD || 'morphstudio2026';
+  const keyAlias = process.env.MORPH_KEY_ALIAS || 'morphkey';
+  const keyPass = process.env.MORPH_KEY_PASSWORD || 'morphstudio2026';
+  const hasKeystore = fs.existsSync(keystoreDst);
+
   let gradle = fs.readFileSync(gradlePath, 'utf8');
   gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${versionCode}`);
   gradle = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${ver}"`);
 
-  // Inject NIO coreLibraryDesugaring + legacy jniLibs packaging + META-INF conflict excludes inside android { ... }
+  // Filter native .so libraries to ARM 64-bit & 32-bit Android devices (excludes ~40 MB of unused desktop x86 emulator binaries)
+  if (!gradle.includes('abiFilters')) {
+    gradle = gradle.replace(
+      /(versionName\s+"[^"]+")/,
+      `$1\n        ndk {\n            abiFilters "arm64-v8a", "armeabi-v7a"\n        }`
+    );
+  }
+
+  // Inject permanent signingConfigs + NIO coreLibraryDesugaring + legacy jniLibs packaging + META-INF conflict excludes
   if (!gradle.includes('coreLibraryDesugaringEnabled')) {
-    const androidExtras = `    compileOptions {
+    const signingBlock = hasKeystore
+      ? `    signingConfigs {
+        morphRelease {
+            storeFile file("morph-release.p12")
+            storePassword "${storePass}"
+            keyAlias "${keyAlias}"
+            keyPassword "${keyPass}"
+            storeType "PKCS12"
+            enableV1Signing true
+            enableV2Signing true
+        }
+    }
+`
+      : '';
+
+    const androidExtras = `${signingBlock}    compileOptions {
         coreLibraryDesugaringEnabled true
     }
     packaging {
@@ -181,6 +225,14 @@ if (fs.existsSync(pkgPath) && fs.existsSync(gradlePath)) {
     gradle = gradle.replace(/(\s*buildTypes\s*\{)/, `\n${androidExtras}$1`);
   }
 
+  // Attach morphRelease permanent signature to both release and debug buildTypes so every APK shares the exact same certificate
+  if (hasKeystore && !gradle.includes('signingConfigs.morphRelease')) {
+    gradle = gradle.replace(
+      /buildTypes\s*\{\s*release\s*\{/,
+      `buildTypes {\n        debug {\n            signingConfig signingConfigs.morphRelease\n        }\n        release {\n            signingConfig signingConfigs.morphRelease`
+    );
+  }
+
   // Inject native download engine dependencies inside dependencies { ... }
   if (!gradle.includes('youtubedl-android')) {
     const engineDeps = `    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs_nio:2.1.5"
@@ -192,7 +244,9 @@ if (fs.existsSync(pkgPath) && fs.existsSync(gradlePath)) {
   }
 
   fs.writeFileSync(gradlePath, gradle, 'utf8');
-  console.log(`Synced Android app version: ${ver} (versionCode ${versionCode}) + native download engines`);
+  console.log(
+    `Synced Android app version: ${ver} (versionCode ${versionCode}, permanentSigned=${hasKeystore}) + native download engines`
+  );
 }
 
 // 7. Install MorphEnginesPlugin.java and register it in MainActivity.java before super.onCreate(...)

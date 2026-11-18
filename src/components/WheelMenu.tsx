@@ -1,11 +1,12 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {LucideIcon, Settings} from 'lucide-react';
+import {ChevronLeft, ChevronRight, LucideIcon} from 'lucide-react';
 import {Lang, t} from '../data/i18n';
 
 export interface WheelActionItem {
   id: string;
   label: string;
   icon: LucideIcon;
+  disabled?: boolean;
 }
 
 interface WheelMenuProps {
@@ -15,11 +16,30 @@ interface WheelMenuProps {
   lang: Lang;
   onDismiss: () => void;
   onSelect: (id: string) => void;
+  onDisabledSelect?: (item: WheelActionItem) => void;
   onOpenCustomize?: () => void;
 }
 
+const MAX_SLICES_PER_PAGE = 14;
 const CENTER_HOLD_MS = 3000;
-const CENTER_TAP_MAX_MS = 320;
+
+/**
+ * Blocks delayed browser-synthesized touch ghost clicks (`isTrusted === true`) for 340ms
+ * after closing the radial wheel on `pointerup`, preventing bleed-through clicks onto
+ * underlying buttons or the corner FAB while allowing programmatic `.click()` (`isTrusted === false`).
+ */
+function installGhostClickShield() {
+  if (typeof window === 'undefined') return;
+  const blocker = (ev: MouseEvent) => {
+    if (!ev.isTrusted) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+  window.addEventListener('click', blocker, true);
+  window.setTimeout(() => {
+    window.removeEventListener('click', blocker, true);
+  }, 340);
+}
 
 interface WheelGeometry {
   size: number;
@@ -39,64 +59,44 @@ interface WheelGeometry {
 }
 
 function getWheelGeometry(count: number): WheelGeometry {
-  if (count > 10) {
-    const size = 388;
-    const outerCount = Math.ceil(count * 0.58);
-    const innerCount = count - outerCount;
+  if (count >= 8) {
+    const size = 384;
+    const outerCount = Math.ceil(count * 0.62);
+    const innerCount = Math.max(1, count - outerCount);
     return {
       size,
       cx: size / 2,
       cy: size / 2,
-      centerR: 50,
+      centerR: 48,
       dualRing: true,
       outerCount,
       innerCount,
-      innerRingIn: 52,
-      innerRingOut: 118,
-      innerLabelR: 85,
+      innerRingIn: 51,
+      innerRingOut: 117,
+      innerLabelR: 84,
       outerRingIn: 120,
-      outerRingOut: 188,
-      outerLabelR: 154,
-      containerWidthClass: 'w-[min(388px,95vw)]',
+      outerRingOut: 186,
+      outerLabelR: 153,
+      containerWidthClass: 'w-[min(384px,94vw)]',
     };
   }
 
-  if (count >= 8) {
-    const size = 368;
-    return {
-      size,
-      cx: size / 2,
-      cy: size / 2,
-      centerR: 52,
-      dualRing: false,
-      outerCount: count,
-      innerCount: 0,
-      innerRingIn: 0,
-      innerRingOut: 0,
-      innerLabelR: 0,
-      outerRingIn: 54,
-      outerRingOut: 178,
-      outerLabelR: 118,
-      containerWidthClass: 'w-[min(368px,94vw)]',
-    };
-  }
-
-  const size = 340;
+  const size = 344;
   return {
     size,
     cx: size / 2,
     cy: size / 2,
-    centerR: 56,
+    centerR: 54,
     dualRing: false,
     outerCount: count,
     innerCount: 0,
     innerRingIn: 0,
     innerRingOut: 0,
     innerLabelR: 0,
-    outerRingIn: 56,
-    outerRingOut: 164,
+    outerRingIn: 57,
+    outerRingOut: 166,
     outerLabelR: 112,
-    containerWidthClass: 'w-[min(340px,92vw)]',
+    containerWidthClass: 'w-[min(344px,92vw)]',
   };
 }
 
@@ -116,6 +116,15 @@ function describeRingSlice(
   startDeg: number,
   endDeg: number
 ): string {
+  if (endDeg - startDeg >= 359.5) {
+    return [
+      `M ${cx} ${cy - outerR}`,
+      `A ${outerR} ${outerR} 0 1 1 ${cx - 0.01} ${cy - outerR}`,
+      `L ${cx - 0.01} ${cy - innerR}`,
+      `A ${innerR} ${innerR} 0 1 0 ${cx} ${cy - innerR}`,
+      'Z',
+    ].join(' ');
+  }
   const outerStart = polarToCartesian(cx, cy, outerR, startDeg);
   const outerEnd = polarToCartesian(cx, cy, outerR, endDeg);
   const innerEnd = polarToCartesian(cx, cy, innerR, endDeg);
@@ -130,6 +139,35 @@ function describeRingSlice(
     'Z',
   ].join(' ');
 }
+
+/**
+ * Builds a precision-beveled 12-tooth Morph gear path centered at (0, 0).
+ */
+function buildPrecisionGearPath(teeth = 12, innerRootR = 11.4, outerTipR = 15.2): string {
+  const pts: string[] = [];
+  const step = (Math.PI * 2) / teeth;
+  for (let i = 0; i < teeth; i++) {
+    const base = i * step;
+    const a0 = base - step * 0.34;
+    const a1 = base - step * 0.17;
+    const a2 = base + step * 0.17;
+    const a3 = base + step * 0.34;
+    const p0x = (innerRootR * Math.cos(a0)).toFixed(2);
+    const p0y = (innerRootR * Math.sin(a0)).toFixed(2);
+    const p1x = (outerTipR * Math.cos(a1)).toFixed(2);
+    const p1y = (outerTipR * Math.sin(a1)).toFixed(2);
+    const p2x = (outerTipR * Math.cos(a2)).toFixed(2);
+    const p2y = (outerTipR * Math.sin(a2)).toFixed(2);
+    const p3x = (innerRootR * Math.cos(a3)).toFixed(2);
+    const p3y = (innerRootR * Math.sin(a3)).toFixed(2);
+    pts.push(i === 0 ? `M ${p0x} ${p0y}` : `L ${p0x} ${p0y}`);
+    pts.push(`L ${p1x} ${p1y}`, `L ${p2x} ${p2y}`, `L ${p3x} ${p3y}`);
+  }
+  pts.push('Z');
+  return pts.join(' ');
+}
+
+const PRECISION_GEAR_PATH = buildPrecisionGearPath(12, 11.4, 15.2);
 
 function angleToRingIndex(angleDeg: number, ringCount: number): number {
   if (ringCount <= 0) return -1;
@@ -185,36 +223,42 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   lang,
   onDismiss,
   onSelect,
+  onDisabledSelect,
   onOpenCustomize,
 }) => {
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [holdProgress, setHoldProgress] = useState<number>(0);
-  const [gearSpinDeg, setGearSpinDeg] = useState<number>(0);
+  const [orbitDeg, setOrbitDeg] = useState<number>(0);
+  const [page, setPage] = useState<number>(0);
+
   const wheelRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<number>(-1);
   const holdRafRef = useRef<number | null>(null);
   const openTimerRef = useRef<number | null>(null);
-  const centerHoldStateRef = useRef<{
-    active: boolean;
-    startAt: number;
-    triggered: boolean;
-    pointerId: number;
-  }>({
-    active: false,
-    startAt: 0,
-    triggered: false,
-    pointerId: -1,
-  });
+  const holdingCenterRef = useRef<boolean>(false);
+  const completedHoldRef = useRef<boolean>(false);
 
-  const stopCenterHoldLoop = useCallback((resetVisual = true) => {
+  const totalPages = Math.max(1, Math.ceil(actions.length / MAX_SLICES_PER_PAGE));
+  const safePage = Math.min(page, totalPages - 1);
+  const pageActions =
+    totalPages > 1
+      ? actions.slice(safePage * MAX_SLICES_PER_PAGE, (safePage + 1) * MAX_SLICES_PER_PAGE)
+      : actions;
+
+  const stopHoldAnimation = useCallback((resetVisual = true) => {
     if (holdRafRef.current !== null) {
       window.cancelAnimationFrame(holdRafRef.current);
       holdRafRef.current = null;
     }
-    centerHoldStateRef.current.active = false;
+    if (openTimerRef.current !== null) {
+      window.clearTimeout(openTimerRef.current);
+      openTimerRef.current = null;
+    }
+    holdingCenterRef.current = false;
     if (resetVisual) {
+      completedHoldRef.current = false;
       setHoldProgress(0);
-      setGearSpinDeg(0);
+      setOrbitDeg(0);
     }
   }, []);
 
@@ -222,77 +266,62 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
     if (!open) {
       setActiveIndex(-1);
       activeRef.current = -1;
-      stopCenterHoldLoop(true);
-      centerHoldStateRef.current.triggered = false;
-      if (openTimerRef.current !== null) {
-        window.clearTimeout(openTimerRef.current);
-        openTimerRef.current = null;
-      }
+      setPage(0);
+      stopHoldAnimation(true);
     }
-  }, [open, stopCenterHoldLoop]);
+  }, [open, stopHoldAnimation]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [title, actions.length]);
 
   useEffect(() => {
     return () => {
-      stopCenterHoldLoop(false);
-      if (openTimerRef.current !== null) {
-        window.clearTimeout(openTimerRef.current);
-      }
+      stopHoldAnimation(false);
     };
-  }, [stopCenterHoldLoop]);
+  }, [stopHoldAnimation]);
 
-  const count = actions.length;
+  const count = pageActions.length;
   const geo = getWheelGeometry(Math.max(1, count));
 
-  const startCenterHold = useCallback(
-    (pointerId: number) => {
-      stopCenterHoldLoop(false);
-      const startAt = performance.now();
-      let lastNow = startAt;
-      let spin = 0;
-      centerHoldStateRef.current = {
-        active: true,
-        startAt,
-        triggered: false,
-        pointerId,
-      };
-      setHoldProgress(0.01);
+  const startCenterHold = useCallback(() => {
+    if (!onOpenCustomize || holdingCenterRef.current || completedHoldRef.current) return;
+    holdingCenterRef.current = true;
+    if ('vibrate' in navigator) {
+      navigator.vibrate(10);
+    }
+    const startAt = performance.now();
 
-      const tick = (now: number) => {
-        if (!centerHoldStateRef.current.active) return;
-        const dtSec = Math.min(0.05, Math.max(0.001, (now - lastNow) / 1000));
-        lastNow = now;
-        const elapsed = now - startAt;
-        const p = Math.min(1, elapsed / CENTER_HOLD_MS);
+    const tick = (now: number) => {
+      if (!holdingCenterRef.current) return;
+      const elapsed = now - startAt;
+      const progress = Math.min(1, elapsed / CENTER_HOLD_MS);
+      setHoldProgress(progress);
+      setOrbitDeg((elapsed * 0.34) % 360);
 
-        const speedDegPerSec = 50 + Math.pow(p, 1.8) * 420;
-        spin = (spin + speedDegPerSec * dtSec) % 360;
-        setHoldProgress(p);
-        setGearSpinDeg(spin);
-
-        if (p >= 1) {
-          centerHoldStateRef.current.active = false;
-          centerHoldStateRef.current.triggered = true;
-          holdRafRef.current = null;
-          if ('vibrate' in navigator) {
-            navigator.vibrate([20, 35, 20]);
-          }
-          openTimerRef.current = window.setTimeout(() => {
-            openTimerRef.current = null;
-            onOpenCustomize?.();
-          }, 160);
-          return;
-        }
-
+      if (progress < 1) {
         holdRafRef.current = window.requestAnimationFrame(tick);
-      };
+      } else {
+        holdRafRef.current = null;
+        holdingCenterRef.current = false;
+        completedHoldRef.current = true;
+        installGhostClickShield();
+        if ('vibrate' in navigator) {
+          navigator.vibrate([18, 28, 20]);
+        }
+        // Brief beat so the crisp solid Morph gear is clearly seen before opening modal
+        openTimerRef.current = window.setTimeout(() => {
+          openTimerRef.current = null;
+          onOpenCustomize();
+        }, 160);
+      }
+    };
 
-      holdRafRef.current = window.requestAnimationFrame(tick);
-    },
-    [onOpenCustomize, stopCenterHoldLoop]
-  );
+    holdRafRef.current = window.requestAnimationFrame(tick);
+  }, [onOpenCustomize]);
 
   const updatePointer = useCallback(
-    (clientX: number, clientY: number) => {
+    (clientX: number, clientY: number, isPressed: boolean) => {
       const el = wheelRef.current;
       if (!el) return {zone: 'outside' as const, sliceIndex: -1};
       const hit = hitWheelTarget(clientX, clientY, el.getBoundingClientRect(), geo);
@@ -300,65 +329,102 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
       if (idx !== activeRef.current) {
         activeRef.current = idx;
         setActiveIndex(idx);
-        if (idx >= 0 && 'vibrate' in navigator) {
+        const item = idx >= 0 && idx < pageActions.length ? pageActions[idx] : undefined;
+        if (idx >= 0 && !item?.disabled && 'vibrate' in navigator) {
           navigator.vibrate(8);
         }
       }
+
+      if (onOpenCustomize && !completedHoldRef.current) {
+        if (isPressed && hit.zone === 'center') {
+          startCenterHold();
+        } else if (holdingCenterRef.current && hit.zone !== 'center') {
+          stopHoldAnimation(true);
+        }
+      }
+
       return hit;
     },
-    [geo]
+    [geo, onOpenCustomize, pageActions, startCenterHold, stopHoldAnimation]
   );
 
   if (!open || count === 0) return null;
 
-  const progressCircumference = 2 * Math.PI * (geo.centerR - 3);
-  const progressOffset = progressCircumference * (1 - holdProgress);
-  const gearOpacity = Math.min(1, Math.max(0, (holdProgress - 0.22) / 0.5));
-  const markOpacity = Math.max(0, 1 - Math.max(0, (holdProgress - 0.28) / 0.45));
+  const canCustomize = Boolean(onOpenCustomize);
+
+  // Strict non-overlapping two-stage swap: m and gear NEVER appear at the same time (zero ghost shadow!)
+  const showSolidGear = canCustomize && holdProgress >= 0.88;
+  const markRetractT = holdProgress <= 0.8 ? 0 : Math.min(1, (holdProgress - 0.8) / 0.08);
+  const markScale =
+    holdProgress > 0
+      ? (0.94 - markRetractT * 0.72)
+      : 1;
+  const markOpacity = 1 - markRetractT;
+
+  const gearRawT = showSolidGear ? Math.min(1, (holdProgress - 0.88) / 0.12) : 0;
+  const gearEased = 1 - Math.pow(1 - gearRawT, 3);
+  const gearScale = 0.56 + gearEased * 0.44;
+  const gearRotateDeg = (1 - gearEased) * -42;
+
+  const orbitR = geo.centerR - 4;
+  const orbitCircumference = 2 * Math.PI * orbitR;
+  const orbitArcRatio = Math.min(1, 0.16 + holdProgress * 0.84);
+  const orbitArcLen = orbitCircumference * orbitArcRatio;
+  const headTipAngleDeg = -90 + orbitArcRatio * 360;
+  const headTipPos = polarToCartesian(geo.cx, geo.cy, orbitR, headTipAngleDeg);
 
   const renderRingSlicesAndLabels = (
     ringItems: WheelActionItem[],
     indexOffset: number,
     ringIn: number,
     ringOut: number,
-    labelR: number,
-    isInnerRing: boolean
+    labelR: number
   ) => {
     const rCount = ringItems.length;
     if (rCount === 0) return {paths: null, labels: null};
     const step = 360 / rCount;
     const startBase = -90 - step / 2;
-    const gapDeg = rCount >= 9 ? 0.8 : 1.1;
+    const gapDeg = rCount === 1 ? 0 : rCount >= 8 ? 0.9 : 1.15;
 
-    const labelWidthPct = geo.dualRing
-      ? isInnerRing
-        ? rCount <= 5
-          ? 16.5
-          : 14
-        : rCount <= 8
-          ? 17
-          : 14.5
-      : rCount <= 4
-        ? 25
-        : rCount <= 6
-          ? 20
-          : rCount <= 8
-            ? 16.5
-            : 14;
+    // Exact trigonometric chord width at inner side of label zone so text/numbers never cross wedge walls
+    const halfAngleRad = Math.min(Math.PI / 3.2, (Math.PI * 0.8) / Math.max(2, rCount));
+    const safeChordPx = Math.max(40, 2 * (labelR - 8) * Math.sin(halfAngleRad));
+    const safeRadialPx = Math.max(34, (ringOut - ringIn) * 0.84);
+    const labelWidthPct = Math.min(26, (safeChordPx / geo.size) * 100);
+    const labelMaxHeightPct = (safeRadialPx / geo.size) * 100;
 
-    const iconSizeClass = geo.dualRing || rCount >= 8 ? 'h-[14px] w-[14px]' : 'h-[17px] w-[17px]';
+    const iconSizeClass = geo.dualRing || rCount >= 7 ? 'h-[14px] w-[14px]' : 'h-[17px] w-[17px]';
     const labelTextClass =
-      geo.dualRing || rCount >= 9 ? 'text-[8.5px]' : rCount >= 7 ? 'text-[9px]' : 'text-[10px]';
+      geo.dualRing || rCount >= 8 ? 'text-[9px]' : rCount >= 6 ? 'text-[9.5px]' : 'text-[10.5px]';
 
     const paths = ringItems.map((action, localIdx) => {
       const globalIdx = indexOffset + localIdx;
       const sAngle = startBase + localIdx * step + gapDeg;
       const eAngle = startBase + (localIdx + 1) * step - gapDeg;
       const isActive = globalIdx === activeIndex;
+      const d = describeRingSlice(geo.cx, geo.cy, ringIn, ringOut, sAngle, eAngle);
+
+      if (action.disabled) {
+        return (
+          <g key={action.id}>
+            <path
+              d={d}
+              fill="var(--paper)"
+              fillOpacity={0.88}
+              stroke="var(--muted)"
+              strokeOpacity={isActive ? 0.55 : 0.28}
+              strokeWidth="1.15"
+              strokeDasharray="3.5 2.8"
+            />
+            <path d={d} fill="url(#morph-disabled-hatch)" pointerEvents="none" />
+          </g>
+        );
+      }
+
       return (
         <path
           key={action.id}
-          d={describeRingSlice(geo.cx, geo.cy, ringIn, ringOut, sAngle, eAngle)}
+          d={d}
           fill={isActive ? 'var(--accent)' : 'var(--surface)'}
           fillOpacity={isActive ? 0.96 : 0.97}
           stroke="var(--line)"
@@ -373,7 +439,9 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
       const midAngle = -90 + localIdx * step;
       const pos = polarToCartesian(geo.cx, geo.cy, labelR, midAngle);
       const Icon = action.icon;
-      const isActive = globalIdx === activeIndex;
+      const isActive = globalIdx === activeIndex && !action.disabled;
+      const isDisabled = Boolean(action.disabled);
+
       return (
         <div
           key={action.id}
@@ -381,16 +449,18 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           style={{
             left: `${(pos.x / geo.size) * 100}%`,
             top: `${(pos.y / geo.size) * 100}%`,
-            width: `${labelWidthPct}%`,
+            width: `${labelWidthPct.toFixed(2)}%`,
+            maxHeight: `${labelMaxHeightPct.toFixed(2)}%`,
+            opacity: isDisabled ? 0.38 : 1,
           }}
         >
           <Icon
             className={`${iconSizeClass} shrink-0 transition-colors duration-100`}
-            style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
+            style={{color: isDisabled ? 'var(--muted)' : isActive ? '#FFFFFF' : 'var(--ink)'}}
           />
           <span
-            className={`mt-0.5 line-clamp-2 w-full overflow-hidden text-ellipsis break-words font-semibold leading-[1.08] tracking-tight ${labelTextClass}`}
-            style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
+            className={`mt-0.5 line-clamp-2 w-full overflow-hidden text-ellipsis font-semibold leading-[1.08] tracking-tight ${labelTextClass}`}
+            style={{color: isDisabled ? 'var(--muted)' : isActive ? '#FFFFFF' : 'var(--ink)'}}
           >
             {action.label}
           </span>
@@ -402,48 +472,67 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   };
 
   const outerSliceGroup = renderRingSlicesAndLabels(
-    geo.dualRing ? actions.slice(0, geo.outerCount) : actions,
+    geo.dualRing ? pageActions.slice(0, geo.outerCount) : pageActions,
     0,
     geo.outerRingIn,
     geo.outerRingOut,
-    geo.outerLabelR,
-    false
+    geo.outerLabelR
   );
 
   const innerSliceGroup = geo.dualRing
     ? renderRingSlicesAndLabels(
-        actions.slice(geo.outerCount),
+        pageActions.slice(geo.outerCount),
         geo.outerCount,
         geo.innerRingIn,
         geo.innerRingOut,
-        geo.innerLabelR,
-        true
+        geo.innerLabelR
       )
     : {paths: null, labels: null};
 
   return (
     <div
-      className="no-touch-callout fixed inset-0 z-50 flex flex-col items-center justify-end gap-3.5 bg-black/60 pb-10 backdrop-blur-sm sm:justify-center sm:pb-0"
-      onClick={onDismiss}
+      className="no-touch-callout fixed inset-0 z-50 flex flex-col items-center justify-end gap-3 bg-black/65 pb-8 backdrop-blur-sm sm:justify-center sm:pb-0"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) {
+          e.stopPropagation();
+        }
+      }}
+      onPointerUp={(e) => {
+        if (e.target === e.currentTarget) {
+          e.stopPropagation();
+          installGhostClickShield();
+          onDismiss();
+        }
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+          e.stopPropagation();
+          onDismiss();
+        }
+      }}
       onContextMenu={(e) => e.preventDefault()}
       role="dialog"
       aria-modal="true"
     >
-      {holdProgress > 0.08 ? (
+      {title && (
         <div
-          className="max-w-[90vw] truncate rounded-full border border-[var(--accent)]/60 bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-lg whitespace-nowrap"
+          className="flex max-w-[90vw] items-center gap-2 truncate rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-bold tracking-wide text-[var(--ink)] shadow-lg whitespace-nowrap"
           onClick={(e) => e.stopPropagation()}
         >
-          {t('HoldingCenterGearHint', lang)} · {Math.max(0, (3 - holdProgress * 3)).toFixed(1)}s
+          <span>{title}</span>
+          {totalPages > 1 && (
+            <>
+              <span aria-hidden="true" className="text-[var(--muted)]">
+                ·
+              </span>
+              <span className="font-mono-num tabular-nums text-[11px] font-semibold text-[var(--accent)]">
+                {safePage + 1}/{totalPages}
+              </span>
+            </>
+          )}
         </div>
-      ) : title ? (
-        <div
-          className="max-w-[90vw] truncate rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-[var(--ink)] shadow-lg whitespace-nowrap"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {title}
-        </div>
-      ) : null}
+      )}
 
       {/* Responsive square wheel container with single or dual concentric rings */}
       <div
@@ -455,79 +544,125 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           if (e.pointerType === 'touch') {
             e.preventDefault();
           }
+          e.stopPropagation();
           try {
             e.currentTarget.setPointerCapture(e.pointerId);
           } catch {
             // Ignore capture errors
           }
-          const hit = updatePointer(e.clientX, e.clientY);
-          if (hit.zone === 'center' && onOpenCustomize) {
-            startCenterHold(e.pointerId);
-          } else {
-            stopCenterHoldLoop(true);
-          }
+          updatePointer(e.clientX, e.clientY, true);
         }}
         onPointerMove={(e) => {
           if (e.buttons > 0 || e.pointerType === 'touch') {
-            const hit = updatePointer(e.clientX, e.clientY);
-            if (centerHoldStateRef.current.active && hit.zone !== 'center') {
-              stopCenterHoldLoop(true);
-            }
+            updatePointer(e.clientX, e.clientY, true);
           }
         }}
         onPointerUp={(e) => {
-          if (centerHoldStateRef.current.triggered) {
-            centerHoldStateRef.current.triggered = false;
+          e.stopPropagation();
+          if (completedHoldRef.current) {
             return;
           }
-          const wasHoldingCenter = centerHoldStateRef.current.active;
-          const heldMs = wasHoldingCenter ? performance.now() - centerHoldStateRef.current.startAt : 0;
-          stopCenterHoldLoop(true);
 
-          const hit = updatePointer(e.clientX, e.clientY);
+          stopHoldAnimation(true);
+          const hit = updatePointer(e.clientX, e.clientY, false);
+          setActiveIndex(-1);
+          activeRef.current = -1;
+
           if (hit.zone === 'slice' && hit.sliceIndex >= 0 && hit.sliceIndex < count) {
+            const chosen = pageActions[hit.sliceIndex];
+            if (chosen.disabled) {
+              if ('vibrate' in navigator) navigator.vibrate([10, 24, 10]);
+              onDisabledSelect?.(chosen);
+              return;
+            }
             if ('vibrate' in navigator) navigator.vibrate(14);
-            onSelect(actions[hit.sliceIndex].id);
+            onSelect(chosen.id);
+            installGhostClickShield();
             return;
           }
 
-          if (wasHoldingCenter && heldMs >= CENTER_TAP_MAX_MS) {
-            // Released center m hold before 3 seconds — keep wheel open so user can retry cleanly
-            return;
-          }
-
+          installGhostClickShield();
           onDismiss();
         }}
         onPointerCancel={() => {
-          stopCenterHoldLoop(true);
+          stopHoldAnimation(true);
           setActiveIndex(-1);
           activeRef.current = -1;
         }}
       >
         <svg viewBox={`0 0 ${geo.size} ${geo.size}`} className="h-full w-full drop-shadow-2xl">
+          <defs>
+            <pattern
+              id="morph-disabled-hatch"
+              width="7"
+              height="7"
+              patternTransform="rotate(45 0 0)"
+              patternUnits="userSpaceOnUse"
+            >
+              <line
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="7"
+                stroke="var(--muted)"
+                strokeOpacity="0.18"
+                strokeWidth="1.5"
+              />
+            </pattern>
+            <linearGradient id="morph-hub-gear-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="var(--accent)" />
+              <stop offset="100%" stopColor="var(--accent-end)" />
+            </linearGradient>
+          </defs>
+
           {outerSliceGroup.paths}
           {innerSliceGroup.paths}
+
+          {/* Center Hub */}
           <circle
             cx={geo.cx}
             cy={geo.cy}
             r={geo.centerR}
             fill="var(--paper)"
-            stroke={holdProgress > 0.05 ? 'var(--accent)' : 'var(--line)'}
-            strokeWidth={holdProgress > 0.05 ? '1.75' : '1.25'}
+            stroke={holdProgress > 0.01 ? 'var(--accent)' : 'var(--line)'}
+            strokeOpacity={holdProgress > 0.01 ? 0.55 : 1}
+            strokeWidth="1.25"
           />
-          {holdProgress > 0.02 && (
-            <circle
-              cx={geo.cx}
-              cy={geo.cy}
-              r={geo.centerR - 3}
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="3.5"
-              strokeLinecap="round"
-              strokeDasharray={progressCircumference}
-              strokeDashoffset={progressOffset}
-              transform={`rotate(-90 ${geo.cx} ${geo.cy})`}
-            />
+
+          {/* Orbiting & filling ring around the center circle during 3-second hold (no numeric timer) */}
+          {canCustomize && holdProgress > 0.005 && (
+            <g pointerEvents="none">
+              <circle
+                cx={geo.cx}
+                cy={geo.cy}
+                r={orbitR}
+                fill="none"
+                stroke="var(--line)"
+                strokeOpacity="0.7"
+                strokeWidth="2.2"
+              />
+              <g transform={`rotate(${orbitDeg.toFixed(1)} ${geo.cx} ${geo.cy})`}>
+                <circle
+                  cx={geo.cx}
+                  cy={geo.cy}
+                  r={orbitR}
+                  fill="none"
+                  stroke="url(#morph-hub-gear-grad)"
+                  strokeWidth="2.8"
+                  strokeLinecap="round"
+                  strokeDasharray={`${orbitArcLen.toFixed(2)} ${orbitCircumference.toFixed(2)}`}
+                  transform={`rotate(-90 ${geo.cx} ${geo.cy})`}
+                />
+                {holdProgress < 0.98 && (
+                  <circle
+                    cx={headTipPos.x}
+                    cy={headTipPos.y}
+                    r="2.4"
+                    fill="var(--accent-end)"
+                  />
+                )}
+              </g>
+            </g>
           )}
         </svg>
 
@@ -535,41 +670,97 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
         {outerSliceGroup.labels}
         {innerSliceGroup.labels}
 
-        {/* Center m mark -> 3s hold morphs into spinning Gear */}
+        {/* Center Hub Mark: strictly mutually exclusive (m OR solid gear — NEVER overlapped) */}
         <div
+          data-customizable={canCustomize ? 'true' : 'false'}
           className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center"
           style={{
             width: `${((geo.centerR * 1.65) / geo.size) * 100}%`,
             height: `${((geo.centerR * 1.65) / geo.size) * 100}%`,
           }}
         >
-          {markOpacity > 0.01 && (
+          {!showSolidGear ? (
             <img
               src="/morph-mark.png"
               alt="morph"
               draggable={false}
-              className="absolute h-9 w-auto object-contain"
+              className="h-8 w-auto object-contain"
               style={{
                 opacity: markOpacity,
-                transform: `scale(${(1 - holdProgress * 0.25).toFixed(3)}) rotate(${(
-                  holdProgress * 90
-                ).toFixed(1)}deg)`,
+                transform: `scale(${markScale.toFixed(3)})`,
               }}
             />
-          )}
-          {gearOpacity > 0.01 && (
-            <Settings
-              className="absolute h-8 w-8 text-[var(--accent)]"
+          ) : (
+            <svg
+              viewBox="-18 -18 36 36"
+              className="h-10 w-10"
               style={{
-                opacity: gearOpacity,
-                transform: `scale(${(0.72 + gearOpacity * 0.36).toFixed(3)}) rotate(${gearSpinDeg.toFixed(
-                  1
-                )}deg)`,
+                transform: `scale(${gearScale.toFixed(3)}) rotate(${gearRotateDeg.toFixed(1)}deg)`,
               }}
-            />
+            >
+              <path
+                d={PRECISION_GEAR_PATH}
+                fill="url(#morph-hub-gear-grad)"
+                fillRule="evenodd"
+              />
+              <circle cx="0" cy="0" r="7.4" fill="var(--paper)" />
+              {[0, 120, 240].map((spokeDeg) => {
+                const rad = (spokeDeg * Math.PI) / 180;
+                return (
+                  <line
+                    key={spokeDeg}
+                    x1={(3.2 * Math.cos(rad)).toFixed(2)}
+                    y1={(3.2 * Math.sin(rad)).toFixed(2)}
+                    x2={(7.4 * Math.cos(rad)).toFixed(2)}
+                    y2={(7.4 * Math.sin(rad)).toFixed(2)}
+                    stroke="url(#morph-hub-gear-grad)"
+                    strokeWidth="2.1"
+                    strokeLinecap="round"
+                  />
+                );
+              })}
+              <circle
+                cx="0"
+                cy="0"
+                r="3.2"
+                fill="var(--paper)"
+                stroke="url(#morph-hub-gear-grad)"
+                strokeWidth="2"
+              />
+            </svg>
           )}
         </div>
       </div>
+
+      {/* Multi-ring pagination bar when more than 14 slices are enabled */}
+      {totalPages > 1 && (
+        <div
+          className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)]/95 p-1 shadow-xl"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => setPage((p) => (p - 1 + totalPages) % totalPages)}
+            aria-label={t('WheelPagePrev', lang)}
+            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-full border border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="px-2.5 font-mono-num tabular-nums text-xs font-bold text-[var(--ink)] whitespace-nowrap">
+            {safePage + 1} / {totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => (p + 1) % totalPages)}
+            aria-label={t('WheelPageNext', lang)}
+            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-full border border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -640,6 +831,7 @@ const TAP_MAX_MS = 320;
 export const WheelFab: React.FC<{
   onClick: () => void;
   label: string;
+  hidden?: boolean;
   side?: 'left' | 'right';
   onChangeSide?: (side: 'left' | 'right') => void;
   onHoverChange?: (hover: boolean) => void;
@@ -650,6 +842,7 @@ export const WheelFab: React.FC<{
 }> = ({
   onClick,
   label,
+  hidden = false,
   side = 'right',
   onChangeSide,
   onHoverChange,
@@ -1220,7 +1413,9 @@ export const WheelFab: React.FC<{
               }
             : undefined
         }
-        className={`no-touch-callout fixed z-30 select-none ${dragPos ? '' : cornerClass}`}
+        className={`no-touch-callout fixed z-30 select-none transition-opacity duration-150 ${
+          dragPos ? '' : cornerClass
+        } ${hidden ? 'pointer-events-none invisible opacity-0' : ''}`}
       >
         {!isDragging && !isPressing && heat < 0.08 && phase === 'idle' && cloud}
         {heat > 0.32 && phase === 'idle' && flameFade > 0.05 && (

@@ -303,11 +303,13 @@ const DICT: Record<string, {tr: string; en: string}> = {
   NotConnected: {tr: 'Bağlanılamadı', en: 'Not connected'},
   Checking: {tr: 'Kontrol ediliyor…', en: 'Checking…'},
   NoServerUrl: {tr: 'Adres girilmedi — tüm entegre motorlar cihazda aktif.', en: 'No address set — all built-in engines run on-device.'},
-  AboutSection: {tr: 'Güncellemeler & APK', en: 'Updates & APK'},
+  AboutSection: {tr: 'Güncellemeler', en: 'Updates'},
   AboutDesc: {
-    tr: 'Yeni sürüm kontrolü yapabilir veya Android APK dosyasını indirebilirsin.',
-    en: 'Check for updates or download the latest Android APK.',
+    tr: 'Yeni sürüm kontrolü yapabilir veya son sürüm paketini indirebilirsin.',
+    en: 'Check for new releases or download the latest app package.',
   },
+  DeveloperLabel: {tr: 'Geliştirici', en: 'Developer'},
+  DeveloperTelegramSub: {tr: 'Telegram üzerinden ulaş', en: 'Reach out on Telegram'},
   CheckUpdates: {tr: 'Güncellemeleri Kontrol Et', en: 'Check for Updates'},
   CheckingUpdates: {tr: 'Kontrol ediliyor…', en: 'Checking…'},
   DownloadUpdate: {tr: 'Güncelleme İndir', en: 'Download Update'},
@@ -551,7 +553,7 @@ const DICT: Record<string, {tr: string; en: string}> = {
   DimensionsLabel: {tr: 'Boyut / İçerik', en: 'Details'},
   ExactBytesLabel: {tr: 'Tam Bayt', en: 'Exact Bytes'},
 
-  // Radial Wheel Customization & 3-Second Hold-to-Gear Popup
+  // Radial Wheel Customization & Instant m-to-Gear Popup
   WheelCustomizeTitle: {tr: 'Çark Özelleştirme', en: 'Customize Radial Wheels'},
   WheelCustomizeSubtitle: {
     tr: 'Dönüştür, Araçlar ve İşlemler çarklarının nasıl sıralanacağını ve hangi araçların öne çıkacağını seç.',
@@ -566,13 +568,13 @@ const DICT: Record<string, {tr: string; en: string}> = {
   },
   WheelModePinned: {tr: 'Öne Çıkardıklarım', en: 'My Pinned Favorites'},
   WheelModePinnedDesc: {
-    tr: 'Aşağıdan işaretlediğin favori format, araç ve işlemleri çarkta ilk sıraya sabitler.',
-    en: 'Prioritizes the exact formats, tools, and actions you pin below.',
+    tr: 'İşaretlediğin favorileri çarkta sabitler; seçili dosyaya uygulanamayan paylar pasif renkle gösterilir.',
+    en: 'Keeps your pinned favorites on the wheel; inapplicable slices appear in a dimmed style.',
   },
   WheelModeAll: {tr: 'Tümünü Çarka Ekle', en: 'Show All on Wheel'},
   WheelModeAllDesc: {
-    tr: 'Seçili dosyayla uyumlu tüm format, araç ve işlemleri eksiksiz olarak çarka yerleştirir.',
-    en: 'Places every compatible format, tool, and action directly onto the radial wheel.',
+    tr: 'Tüm seçenekleri çarka ekler; seçili dosyaya uygulanamayan paylar pasif doku ve renkle ayrılır.',
+    en: 'Places all options on the wheel; inapplicable slices are shown with a distinct muted pattern.',
   },
   TabConvertWheel: {tr: 'Dönüştür', en: 'Convert'},
   TabToolsWheel: {tr: 'Araçlar', en: 'Tools'},
@@ -582,14 +584,29 @@ const DICT: Record<string, {tr: string; en: string}> = {
   MoveLeftShort: {tr: 'Öne Al', en: 'Move Earlier'},
   ResetWheelDefaults: {tr: 'Varsayılana Sıfırla', en: 'Reset Defaults'},
   WheelHoldHint: {
-    tr: 'İpucu: Herhangi bir çark açıkken ortadaki m harfine 3 saniye basılı tutarak bu pencereyi anında açabilirsin.',
-    en: 'Tip: Press and hold the center m mark for 3 seconds on any open wheel to open this popup.',
+    tr: 'İpucu: Dönüştür, Araçlar ve İşlemler çarklarında ortadaki m işaretine 3 saniye basılı tutarak bu pencereyi açabilirsin.',
+    en: 'Tip: Press and hold the center m hub for 3 seconds on Convert, Tools, or Actions wheels to open this popup.',
   },
-  HoldingCenterGearHint: {tr: 'Çark ayarları açılıyor', en: 'Opening wheel settings'},
+  SliceDisabledToast: {
+    tr: 'Bu seçenek seçili dosya türü veya adedi için uygun değil',
+    en: 'This option is not applicable to the selected file type or count',
+  },
+  WheelPagePrev: {tr: 'Önceki Halka', en: 'Prev Ring'},
+  WheelPageNext: {tr: 'Sonraki Halka', en: 'Next Ring'},
   WheelSaveSource: {tr: 'Kaydet', en: 'Save'},
-  WheelSortAz: {tr: 'A→Z Sırala', en: 'Sort A→Z'},
+  WheelSortAz: {tr: 'A-Z Sıra', en: 'Sort A-Z'},
   WheelAutoNum: {tr: 'Numarala', en: 'Auto-Num'},
   WheelSettingsSavedToast: {tr: 'Çark tercihleri kaydedildi', en: 'Wheel preferences saved'},
+
+  // Settings Categories & APK Signing Info
+  SetCatAppearance: {tr: 'Görünüm', en: 'Appearance'},
+  SetCatDownloads: {tr: 'İndirme', en: 'Downloads'},
+  SetCatPermissions: {tr: 'İzinler', en: 'Permissions'},
+  SetCatAbout: {tr: 'Güncelleme', en: 'Updates'},
+  ApkSignatureReady: {
+    tr: 'Kalıcı Morph imzalı APK · Sonraki güncellemeler mevcut kurulumun üzerine sorunsuz yüklenir.',
+    en: 'Permanent Morph signed APK · Future updates install seamlessly in-place.',
+  },
 };
 
 export function t(key: string, lang: Lang): string {

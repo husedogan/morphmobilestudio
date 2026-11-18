@@ -351,7 +351,7 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
           <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">{t('EngineNote', lang)}</p>
         </div>
 
-        {/* Coupled Fluid Latching Update & Manage Bar (Stays on Last Selected, Never Truncates) */}
+        {/* Coupled Fluid Latching Update & Manage Bar */}
         <div className="mt-4 flex w-full items-stretch gap-2">
           {(updateInfo?.hasUpdate || onCheckUpdate) && (() => {
             const isExpanded = activeAction === 'update';
@@ -370,8 +370,6 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 onPointerEnter={(e) => {
                   if (e.pointerType === 'mouse') setLatchedAction('update');
                 }}
-                onPointerDown={() => setLatchedAction('update')}
-                onFocus={() => setLatchedAction('update')}
                 onClick={() => {
                   setLatchedAction('update');
                   if (hasUpdate) {
@@ -380,14 +378,14 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                     onCheckUpdate?.();
                   }
                 }}
-                className={`flex min-h-[46px] min-w-[48px] items-center justify-center overflow-hidden rounded-full border transition-[flex-grow,padding,background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] disabled:opacity-70 ${
+                className={`flex min-h-[46px] min-w-[48px] basis-0 items-center justify-center overflow-hidden rounded-full border px-3 transition-[flex-grow,background-color,border-color,color,opacity,transform] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[flex-grow] active:scale-[0.98] disabled:opacity-70 ${
                   hasUpdate
                     ? isExpanded
-                      ? 'morph-accent-btn flex-[4.5] border-transparent px-3.5 shadow-sm sm:px-4'
-                      : 'morph-accent-btn flex-[0.85] border-transparent px-0 opacity-90 hover:opacity-100'
+                      ? 'morph-accent-btn grow-[4.2] border-transparent shadow-sm'
+                      : 'morph-accent-btn grow-[0.9] border-transparent opacity-90 hover:opacity-100'
                     : isExpanded
-                      ? 'morph-tonal-btn flex-[4.5] px-3.5 shadow-sm sm:px-4'
-                      : 'flex-[0.85] border-[var(--line)]/70 bg-[var(--inset)]/80 px-0 text-[var(--muted)] opacity-90 hover:border-[var(--accent)]/45 hover:text-[var(--ink)] hover:opacity-100'
+                      ? 'morph-tonal-btn grow-[4.2] shadow-sm'
+                      : 'grow-[0.9] border-[var(--line)]/70 bg-[var(--inset)]/80 text-[var(--muted)] opacity-90 hover:border-[var(--accent)]/45 hover:text-[var(--ink)] hover:opacity-100'
                 }`}
               >
                 {hasUpdate ? (
@@ -400,11 +398,13 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                   />
                 )}
                 <span
-                  className={`overflow-hidden whitespace-nowrap text-xs font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isExpanded ? 'ml-2 max-w-[225px] opacity-100' : 'ml-0 max-w-0 opacity-0'
+                  className={`grid overflow-hidden transition-[grid-template-columns,opacity] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    isExpanded ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
                   }`}
                 >
-                  {label}
+                  <span className="min-w-0 overflow-hidden whitespace-nowrap pl-2 text-xs font-semibold leading-none">
+                    {label}
+                  </span>
                 </span>
               </button>
             );
@@ -421,25 +421,25 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 onPointerEnter={(e) => {
                   if (e.pointerType === 'mouse') setLatchedAction('manage');
                 }}
-                onPointerDown={() => setLatchedAction('manage')}
-                onFocus={() => setLatchedAction('manage')}
                 onClick={() => {
                   setLatchedAction('manage');
                   onOpenManageTools();
                 }}
-                className={`flex min-h-[46px] min-w-[48px] items-center justify-center overflow-hidden rounded-full border transition-[flex-grow,padding,background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] ${
+                className={`flex min-h-[46px] min-w-[48px] basis-0 items-center justify-center overflow-hidden rounded-full border px-3 transition-[flex-grow,background-color,border-color,color,opacity,transform] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[flex-grow] active:scale-[0.98] ${
                   isExpanded
-                    ? 'flex-[4.5] border-[var(--accent-end)]/55 bg-[var(--accent-end)]/16 px-4 text-[var(--ink)] shadow-sm'
-                    : 'flex-[0.85] border-[var(--line)]/70 bg-[var(--inset)]/80 px-0 text-[var(--muted)] opacity-90 hover:border-[var(--accent-end)]/45 hover:text-[var(--ink)] hover:opacity-100'
+                    ? 'grow-[4.2] border-[var(--accent-end)]/55 bg-[var(--accent-end)]/16 text-[var(--ink)] shadow-sm'
+                    : 'grow-[0.9] border-[var(--line)]/70 bg-[var(--inset)]/80 text-[var(--muted)] opacity-90 hover:border-[var(--accent-end)]/45 hover:text-[var(--ink)] hover:opacity-100'
                 }`}
               >
                 <SlidersHorizontal className="h-4 w-4 shrink-0 text-[var(--accent-end)] transition-colors duration-200" />
                 <span
-                  className={`overflow-hidden whitespace-nowrap text-xs font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isExpanded ? 'ml-2 max-w-[180px] opacity-100' : 'ml-0 max-w-0 opacity-0'
+                  className={`grid overflow-hidden transition-[grid-template-columns,opacity] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    isExpanded ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
                   }`}
                 >
-                  {label}
+                  <span className="min-w-0 overflow-hidden whitespace-nowrap pl-2 text-xs font-semibold leading-none">
+                    {label}
+                  </span>
                 </span>
               </button>
             );
@@ -466,23 +466,28 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 onPointerEnter={(e) => {
                   if (e.pointerType === 'mouse') setLatchedSegment(id);
                 }}
-                onFocus={() => setLatchedSegment(id)}
                 onClick={() => setLatchedSegment(activeEngine === id ? null : id)}
-                className={`flex min-h-[40px] min-w-0 items-center justify-center overflow-hidden rounded-xl border transition-[flex-grow,padding,background-color,border-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                className={`flex min-h-[42px] min-w-[44px] basis-0 items-center justify-center overflow-hidden rounded-xl border px-2.5 transition-[flex-grow,background-color,border-color,color] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] will-change-[flex-grow] ${
                   isExpanded
-                    ? 'flex-[3.2] border-[var(--accent)]/50 bg-[var(--accent)]/15 px-3 text-[var(--ink)] shadow-sm'
+                    ? 'grow-[3.1] border-[var(--accent)]/50 bg-[var(--accent)]/15 text-[var(--ink)] shadow-sm'
                     : someoneElseExpanded
-                      ? 'flex-[0.65] border-transparent bg-[var(--surface)]/70 px-1 text-[var(--muted)] hover:text-[var(--ink)]'
-                      : 'flex-1 border-[var(--line)]/60 bg-[var(--surface)]/80 px-2 text-[var(--accent)] hover:border-[var(--accent)]/40'
+                      ? 'grow-[0.75] border-transparent bg-[var(--surface)]/70 text-[var(--muted)] hover:text-[var(--ink)]'
+                      : 'grow border-[var(--line)]/60 bg-[var(--surface)]/80 text-[var(--accent)] hover:border-[var(--accent)]/40'
                 }`}
               >
-                <Icon className={`h-4 w-4 shrink-0 transition-colors duration-200 ${isExpanded ? 'text-[var(--accent)]' : ''}`} />
+                <Icon
+                  className={`h-4 w-4 shrink-0 transition-colors duration-200 ${
+                    isExpanded ? 'text-[var(--accent)]' : ''
+                  }`}
+                />
                 <span
-                  className={`overflow-hidden whitespace-nowrap text-[11px] font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                    isExpanded ? 'ml-2 max-w-[150px] opacity-100' : 'ml-0 max-w-0 opacity-0'
+                  className={`grid overflow-hidden transition-[grid-template-columns,opacity] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                    isExpanded ? 'grid-cols-[1fr] opacity-100' : 'grid-cols-[0fr] opacity-0'
                   }`}
                 >
-                  {label}
+                  <span className="min-w-0 overflow-hidden whitespace-nowrap pl-2 text-[11px] font-semibold leading-none">
+                    {label}
+                  </span>
                 </span>
               </button>
             );

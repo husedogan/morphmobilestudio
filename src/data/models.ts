@@ -866,10 +866,10 @@ const WHEEL_TOOL_LABELS: Record<string, {tr: string; en: string}> = {
   SCAN_DOC: {tr: 'Belge Tara', en: 'Scan Doc'},
   SOCIAL_FIT: {tr: 'Sığdır', en: 'Social Fit'},
   REDACT: {tr: 'Sansürle', en: 'Redact'},
-  IMAGE_GRID_SPLIT: {tr: 'Izgara Böl', en: 'Grid Split'},
+  IMAGE_GRID_SPLIT: {tr: 'Izgara', en: 'Grid'},
   GIF_MAKE: {tr: 'GIF Yap', en: 'Make GIF'},
   PASSPORT_GRID: {tr: 'Vesikalık', en: 'ID Print'},
-  ICON_PACK: {tr: 'İkon Paketi', en: 'Icons'},
+  ICON_PACK: {tr: 'İkon Yap', en: 'Icons'},
   PDF_CREATE: {tr: 'PDF Yap', en: 'Make PDF'},
   PDF_MERGE: {tr: 'Birleştir', en: 'Merge'},
   PDF_SPLIT: {tr: 'PDF Böl', en: 'Split'},
@@ -877,51 +877,67 @@ const WHEEL_TOOL_LABELS: Record<string, {tr: string; en: string}> = {
   PDF_EXTRACT_PAGES: {tr: 'Ayıkla', en: 'Extract'},
   PDF_ROTATE: {tr: 'Döndür', en: 'Rotate'},
   PDF_WATERMARK: {tr: 'Filigran', en: 'Watermark'},
-  PDF_GRAYSCALE: {tr: 'Siyah-Beyaz', en: 'Grayscale'},
-  PDF_NUP: {tr: '2’li Baskı', en: 'N-Up'},
+  PDF_GRAYSCALE: {tr: 'Gri Ton', en: 'Grayscale'},
+  PDF_NUP: {tr: 'Çoklu A4', en: 'N-Up'},
   PDF_OPTIMIZE: {tr: 'Optimize', en: 'Optimize'},
   PDF_STAMP: {tr: 'Damga', en: 'Stamp'},
-  PDF_TO_IMAGES: {tr: 'Görsel Yap', en: 'To Images'},
+  PDF_TO_IMAGES: {tr: 'Görsel Al', en: 'To Images'},
   ZIP_CREATE: {tr: 'ZIP Yap', en: 'Make ZIP'},
   ZIP_EXTRACT: {tr: 'ZIP Aç', en: 'Extract'},
   BATCH_RENAME: {tr: 'Adlandır', en: 'Rename'},
   FILE_HASH_INFO: {tr: 'SHA-256', en: 'Checksum'},
-  video_convert: {tr: 'Dönüştür', en: 'Convert'},
-  video_compress: {tr: 'Sıkıştır', en: 'Compress'},
+  video_convert: {tr: 'Video Çevir', en: 'Convert'},
+  video_compress: {tr: 'V. Sıkıştır', en: 'Compress'},
   video_extract_audio: {tr: 'Ses Al', en: 'To Audio'},
   video_mute: {tr: 'Sessiz', en: 'Mute'},
-  video_trim: {tr: 'Kırp', en: 'Trim'},
+  video_trim: {tr: 'Video Kes', en: 'Trim'},
   video_crop: {tr: 'Kadraj', en: 'Aspect'},
   video_rotate: {tr: 'Döndür', en: 'Rotate'},
   video_speed: {tr: 'Hız', en: 'Speed'},
-  video_reverse: {tr: 'Ters Çevir', en: 'Reverse'},
+  video_reverse: {tr: 'Geri Sar', en: 'Reverse'},
   video_boomerang: {tr: 'Bumerang', en: 'Boomerang'},
   video_loop: {tr: 'Döngü', en: 'Loop'},
   video_snapshots: {tr: 'Kare Al', en: 'Frames'},
   video_split: {tr: 'İkiye Böl', en: 'Split'},
   video_join: {tr: 'Birleştir', en: 'Join'},
-  audio_convert: {tr: 'Dönüştür', en: 'Convert'},
-  audio_join: {tr: 'Birleştir', en: 'Merge'},
+  audio_convert: {tr: 'Ses Çevir', en: 'Convert'},
+  audio_join: {tr: 'Ses Ekle', en: 'Merge'},
   audio_normalize: {tr: 'Dengele', en: 'Normalize'},
-  audio_trim: {tr: 'Kes', en: 'Trim'},
+  audio_trim: {tr: 'Ses Kes', en: 'Trim'},
   audio_speed: {tr: 'Hız / Ton', en: 'Speed'},
   audio_fade: {tr: 'Fade', en: 'Fade'},
-  audio_reverse: {tr: 'Ters Çevir', en: 'Reverse'},
+  audio_reverse: {tr: 'Ters Ses', en: 'Reverse'},
   audio_channels: {tr: 'Kanal', en: 'Channels'},
   audio_to_video: {tr: 'Video Yap', en: 'To Video'},
-  audio_bleep: {tr: 'Sessiz Al', en: 'Bleep'},
-  office_to_pdf: {tr: 'PDF Yap', en: 'To PDF'},
+  audio_bleep: {tr: 'Sustur', en: 'Bleep'},
+  office_to_pdf: {tr: 'Belge→PDF', en: 'Doc→PDF'},
   doc_to_docx: {tr: 'Word Yap', en: 'To DOCX'},
   doc_to_html: {tr: 'HTML Yap', en: 'To HTML'},
-  table_convert: {tr: 'Tablo Çevir', en: 'Table'},
+  table_convert: {tr: 'Tablo', en: 'Table'},
   office_to_text: {tr: 'Metin Al', en: 'To Text'},
-  pdf_to_docx: {tr: 'Word Yap', en: 'To Word'},
-  pdf_to_txt: {tr: 'Metin Al', en: 'To Text'},
-  pdf_to_html: {tr: 'HTML Yap', en: 'To HTML'},
+  pdf_to_docx: {tr: 'PDF→Word', en: 'To Word'},
+  pdf_to_txt: {tr: 'PDF→TXT', en: 'To TXT'},
+  pdf_to_html: {tr: 'PDF→HTML', en: 'To HTML'},
 };
 
 export function shortWheelToolLabel(id: string, lang: 'tr' | 'en', fallback: string): string {
   return WHEEL_TOOL_LABELS[id]?.[lang] ?? fallback;
+}
+
+export type WheelToolCategory = 'all' | 'edit' | 'pdf_doc' | 'media' | 'batch';
+
+export function getWheelToolCategory(prefixedId: string): Exclude<WheelToolCategory, 'all'> {
+  if (prefixedId.startsWith('server:')) {
+    const sid = prefixedId.slice(7);
+    if (sid.startsWith('video_') || sid.startsWith('audio_')) return 'media';
+    return 'pdf_doc';
+  }
+  const lid = prefixedId.startsWith('local:') ? prefixedId.slice(6) : prefixedId;
+  if (lid.startsWith('PDF_')) return 'pdf_doc';
+  if (lid === 'ZIP_CREATE' || lid === 'ZIP_EXTRACT' || lid === 'BATCH_RENAME' || lid === 'FILE_HASH_INFO') {
+    return 'batch';
+  }
+  return 'edit';
 }
 
 export const ALL_CONVERT_FORMATS_CATALOG = [

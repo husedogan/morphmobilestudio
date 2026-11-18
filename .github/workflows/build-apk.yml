@@ -92,16 +92,21 @@ jobs:
           npx cap sync android
           node scripts/prepare-android.mjs
 
-      - name: Build Android APK
+      - name: Verify permanent signing key & Build Android APK
         working-directory: android
         run: |
+          keytool -list -keystore app/morph-release.p12 -storepass morphstudio2026 -storetype PKCS12
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
       - name: Package release assets
         run: |
           mkdir -p release-assets
-          cp android/app/build/outputs/apk/debug/app-debug.apk "release-assets/Morph-${{ steps.meta.outputs.tag }}.apk"
+          APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          fi
+          cp "$APK_PATH" "release-assets/Morph-${{ steps.meta.outputs.tag }}.apk"
           (cd release-assets && sha256sum "Morph-${{ steps.meta.outputs.tag }}.apk" > checksums.sha256)
 
       - name: Upload workflow artifact
@@ -121,7 +126,8 @@ jobs:
           body: |
             ## Morph ${{ steps.meta.outputs.version }} · ${{ steps.meta.outputs.channel }}
 
-            - **Doğrudan APK Kurulumu:** `Morph-${{ steps.meta.outputs.tag }}.apk`
+            - **Doğrudan APK Kurulumu (Kalıcı İmzalı):** `Morph-${{ steps.meta.outputs.tag }}.apk`
+            - **Sorunsuz Üzerine Güncelleme:** Sabit Morph sertifikası ve artan yapı numarası ile sonraki tüm sürümler mevcut uygulamanın üzerine doğrudan kurulur.
             - **Sürüm Kuralı:** Çift son numaralar (`1.1.2`, `1.1.4`…) kararlı sürüm, tek son numaralar (`1.1.3`, `1.1.5`…) beta sürümüdür.
           files: |
             release-assets/Morph-${{ steps.meta.outputs.tag }}.apk

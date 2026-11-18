@@ -46,13 +46,14 @@ import {JobOverlay} from './components/JobOverlay';
 import {LibraryScreen} from './components/LibraryScreen';
 import {OfflineBanner} from './components/PWAInstallButton';
 import {ErrorView, ResultView} from './components/ResultView';
-import {SettingsScreen} from './components/SettingsScreen';
+import {SettingsCategory, SettingsScreen} from './components/SettingsScreen';
 import {StudioScreen} from './components/StudioScreen';
 import {ToolFlow} from './components/ToolFlow';
 import {CustomizeWheelTab, WheelCustomizeModal} from './components/WheelCustomizeModal';
 import {WheelActionItem, WheelFab, WheelMenu} from './components/WheelMenu';
 import {t} from './data/i18n';
 import {
+  ALL_CONVERT_FORMATS_CATALOG,
   ALL_TOOLS,
   ALL_WHEEL_ACTIONS_CATALOG,
   DEFAULT_WHEEL_CONFIG,
@@ -60,6 +61,7 @@ import {
   JobState,
   PickedFile,
   Prefs,
+  SERVER_TOOLS,
   ServerToolDef,
   ToolId,
   buildPickedFile,
@@ -190,6 +192,7 @@ export default function App() {
   const [job, setJob] = useState<JobState>({status: 'idle'});
   const [serverStatus, setServerStatus] = useState('');
   const [wheelKind, setWheelKind] = useState<WheelKind>(null);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>('appearance');
   const [customizeModal, setCustomizeModal] = useState<{open: boolean; tab: CustomizeWheelTab}>({
     open: false,
     tab: 'tools',
@@ -802,133 +805,156 @@ export default function App() {
 
     if (wheelKind === 'convert') {
       const compatible = convertTargetsForSelection(files);
+      const compatibleSet = new Set(compatible);
+      const smartTargets = smartConvertTargetsForSelection(files);
+
+      const toFormatSlice = (fmt: string, isCompatible: boolean): WheelActionItem => ({
+        id: `fmt:${fmt}`,
+        label: fmt.toUpperCase(),
+        icon: fmt === 'pdf' ? FileText : ArrowLeftRight,
+        disabled: !isCompatible,
+      });
+
+      if (mode === 'all') {
+        const inapplicable = ALL_CONVERT_FORMATS_CATALOG.filter((fmt) => !compatibleSet.has(fmt));
+        const slices: WheelActionItem[] =
+          compatible.length === 0
+            ? [
+                {id: 'local:ZIP_CREATE', label: t('WheelZip', lang), icon: FileArchive},
+                {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
+                ...inapplicable.map((fmt) => toFormatSlice(fmt, false)),
+              ]
+            : [
+                ...smartTargets.map((fmt) => toFormatSlice(fmt, true)),
+                ...inapplicable.map((fmt) => toFormatSlice(fmt, false)),
+              ];
+        return {
+          wheelTitle: t('Convert', lang),
+          wheelActions: slices,
+        };
+      }
+
+      if (mode === 'pinned' && wheelConfig.pinnedConvert.length > 0) {
+        const pinnedSlices = wheelConfig.pinnedConvert.map((fmt) =>
+          toFormatSlice(fmt, compatibleSet.has(fmt))
+        );
+        const hasMoreCompatible = compatible.some((fmt) => !wheelConfig.pinnedConvert.includes(fmt));
+        return {
+          wheelTitle: t('Convert', lang),
+          wheelActions: hasMoreCompatible
+            ? [
+                ...pinnedSlices,
+                {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
+              ]
+            : pinnedSlices,
+        };
+      }
+
+      // Smart mode: rank formats by exact file extension and count
       if (compatible.length === 0) {
         return {
           wheelTitle: t('Convert', lang),
           wheelActions: [
             {id: 'local:ZIP_CREATE', label: t('WheelZip', lang), icon: FileArchive},
             {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
-            {id: 'nav:studio', label: t('Studio', lang), icon: Sparkles},
+            ...['pdf', 'jpg', 'mp4', 'mp3'].map((fmt) => toFormatSlice(fmt, false)),
           ],
         };
       }
-
-      const toFormatSlice = (fmt: string): WheelActionItem => ({
-        id: `fmt:${fmt}`,
-        label: fmt.toUpperCase(),
-        icon: fmt === 'pdf' ? FileText : ArrowLeftRight,
-      });
-
-      if (mode === 'all') {
-        const smartAll = smartConvertTargetsForSelection(files);
-        return {
-          wheelTitle: t('Convert', lang),
-          wheelActions: smartAll.map(toFormatSlice),
-        };
-      }
-
-      if (mode === 'pinned') {
-        const pinnedMatches = wheelConfig.pinnedConvert.filter((fmt) => compatible.includes(fmt));
-        const baseList =
-          pinnedMatches.length > 0
-            ? pinnedMatches
-            : smartConvertTargetsForSelection(files).slice(0, 5);
-        const hasMore = compatible.some((fmt) => !baseList.includes(fmt));
-        return {
-          wheelTitle: t('Convert', lang),
-          wheelActions: hasMore
-            ? [
-                ...baseList.map(toFormatSlice),
-                {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
-              ]
-            : baseList.map(toFormatSlice),
-        };
-      }
-
-      // Smart mode: rank formats by exact file extension and count
-      const smartTargets = smartConvertTargetsForSelection(files);
       if (smartTargets.length > 6) {
         return {
           wheelTitle: t('Convert', lang),
           wheelActions: [
-            ...smartTargets.slice(0, 5).map(toFormatSlice),
+            ...smartTargets.slice(0, 5).map((fmt) => toFormatSlice(fmt, true)),
             {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
           ],
         };
       }
       return {
         wheelTitle: t('Convert', lang),
-        wheelActions: smartTargets.map(toFormatSlice),
+        wheelActions: smartTargets.map((fmt) => toFormatSlice(fmt, true)),
       };
     }
 
     if (wheelKind === 'tools') {
-      const localDefs = toolsForSelection(files);
-      const serverDefs = serverToolsForSelection(files);
-      const itemMap = new Map<string, WheelActionItem>();
+      const compatibleLocals = new Set(toolsForSelection(files).map((d) => `local:${d.id}`));
+      const compatibleServers = new Set(serverToolsForSelection(files).map((d) => `server:${d.id}`));
+      const compatibleSet = new Set<string>([...compatibleLocals, ...compatibleServers]);
+      compatibleSet.delete('local:CONVERT');
 
-      for (const tool of localDefs) {
-        itemMap.set(`local:${tool.id}`, {
-          id: `local:${tool.id}`,
-          label: shortWheelToolLabel(tool.id, lang, t(tool.titleKey, lang)),
-          icon: wheelIconForLocalTool(tool.id),
+      const allCatalogMap = new Map<string, WheelActionItem>();
+      for (const toolId of Object.keys(ALL_TOOLS) as ToolId[]) {
+        if (toolId === 'CONVERT') continue;
+        const def = ALL_TOOLS[toolId];
+        const key = `local:${toolId}`;
+        allCatalogMap.set(key, {
+          id: key,
+          label: shortWheelToolLabel(toolId, lang, t(def.titleKey, lang)),
+          icon: wheelIconForLocalTool(toolId),
+          disabled: !compatibleSet.has(key),
         });
       }
-      for (const tool of serverDefs) {
-        itemMap.set(`server:${tool.id}`, {
-          id: `server:${tool.id}`,
-          label: shortWheelToolLabel(tool.id, lang, lang === 'tr' ? tool.titleTr : tool.titleEn),
-          icon: tool.id.startsWith('video')
+      for (const srv of SERVER_TOOLS) {
+        const key = `server:${srv.id}`;
+        allCatalogMap.set(key, {
+          id: key,
+          label: shortWheelToolLabel(srv.id, lang, lang === 'tr' ? srv.titleTr : srv.titleEn),
+          icon: srv.id.startsWith('video')
             ? Film
-            : tool.id.startsWith('audio')
+            : srv.id.startsWith('audio')
               ? Music
               : FileText,
+          disabled: !compatibleSet.has(key),
         });
       }
 
+      const smartIds = smartToolIdsForSelection(files).filter(
+        (id) => id !== 'local:CONVERT' && allCatalogMap.has(id)
+      );
+
       if (mode === 'all') {
-        const allIds = smartToolIdsForSelection(files).filter((id) => itemMap.has(id));
+        const seen = new Set(smartIds);
+        const inapplicableIds = Array.from(allCatalogMap.keys()).filter((id) => !seen.has(id));
         return {
           wheelTitle: t('Tools', lang),
-          wheelActions: allIds.map((id) => itemMap.get(id)!),
+          wheelActions: [
+            ...smartIds.map((id) => allCatalogMap.get(id)!),
+            ...inapplicableIds.map((id) => allCatalogMap.get(id)!),
+          ],
         };
       }
 
-      if (mode === 'pinned') {
-        const pinnedMatches = wheelConfig.pinnedTools.filter((id) => itemMap.has(id));
-        const smartFallback = smartToolIdsForSelection(files)
-          .filter((id) => id !== 'local:CONVERT' && itemMap.has(id))
-          .slice(0, 5);
-        const chosenIds = pinnedMatches.length > 0 ? pinnedMatches : smartFallback;
-        const totalAvailable = Array.from(itemMap.keys()).filter((id) => id !== 'local:CONVERT').length;
-        const hasMore = totalAvailable > chosenIds.length;
+      if (mode === 'pinned' && wheelConfig.pinnedTools.length > 0) {
+        const pinnedSlices = wheelConfig.pinnedTools
+          .filter((id) => allCatalogMap.has(id))
+          .map((id) => allCatalogMap.get(id)!);
+        const hasMoreCompatible = Array.from(compatibleSet).some(
+          (id) => !wheelConfig.pinnedTools.includes(id)
+        );
         return {
           wheelTitle: t('Tools', lang),
-          wheelActions: hasMore
+          wheelActions: hasMoreCompatible
             ? [
-                ...chosenIds.map((id) => itemMap.get(id)!),
+                ...pinnedSlices,
                 {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
               ]
-            : chosenIds.map((id) => itemMap.get(id)!),
+            : pinnedSlices,
         };
       }
 
       // Smart mode: prioritize context-aware tools by file kind, count, size, and name
-      const smartIds = smartToolIdsForSelection(files).filter(
-        (id) => id !== 'local:CONVERT' && itemMap.has(id)
-      );
       if (smartIds.length > 6) {
         return {
           wheelTitle: t('Tools', lang),
           wheelActions: [
-            ...smartIds.slice(0, 5).map((id) => itemMap.get(id)!),
+            ...smartIds.slice(0, 5).map((id) => allCatalogMap.get(id)!),
             {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
           ],
         };
       }
       return {
         wheelTitle: t('Tools', lang),
-        wheelActions: smartIds.map((id) => itemMap.get(id)!),
+        wheelActions: smartIds.map((id) => allCatalogMap.get(id)!),
       };
     }
 
@@ -968,45 +994,45 @@ export default function App() {
         return t(labelKey, lang);
       };
 
-      const compatibleActions = ALL_WHEEL_ACTIONS_CATALOG.filter(
-        (act) => !act.multiOnly || files.length > 1
-      );
-      const actionMap = new Map<string, WheelActionItem>(
-        compatibleActions.map((act) => [
-          act.id,
-          {
-            id: act.id,
-            label: labelForAction(act.id, act.labelKey),
-            icon: iconForAction(act.id),
-          },
-        ])
+      const fullActionMap = new Map<string, WheelActionItem>(
+        ALL_WHEEL_ACTIONS_CATALOG.map((act) => {
+          const isInapplicable = files.length === 0 || Boolean(act.multiOnly && files.length <= 1);
+          return [
+            act.id,
+            {
+              id: act.id,
+              label: labelForAction(act.id, act.labelKey),
+              icon: iconForAction(act.id),
+              disabled: isInapplicable,
+            },
+          ];
+        })
       );
 
       if (mode === 'all') {
         return {
           wheelTitle: t('FileActions', lang),
-          wheelActions: Array.from(actionMap.values()),
+          wheelActions: Array.from(fullActionMap.values()),
         };
       }
 
-      if (mode === 'pinned') {
-        const pinnedIds = wheelConfig.pinnedActions.filter((id) => actionMap.has(id));
-        const chosen =
-          pinnedIds.length > 0
-            ? pinnedIds.map((id) => actionMap.get(id)!)
-            : Array.from(actionMap.values()).slice(0, 6);
+      if (mode === 'pinned' && wheelConfig.pinnedActions.length > 0) {
+        const chosen = wheelConfig.pinnedActions
+          .filter((id) => fullActionMap.has(id))
+          .map((id) => fullActionMap.get(id)!);
         const hasSheet = chosen.some((c) => c.id === 'action:sheet');
-        const hasMore = actionMap.size > chosen.length;
+        const compatibleCount = Array.from(fullActionMap.values()).filter((a) => !a.disabled).length;
+        const activeChosenCount = chosen.filter((a) => !a.disabled).length;
         return {
           wheelTitle: t('FileActions', lang),
           wheelActions:
-            hasMore && !hasSheet && actionMap.has('action:sheet')
-              ? [...chosen, actionMap.get('action:sheet')!]
+            compatibleCount > activeChosenCount && !hasSheet && fullActionMap.has('action:sheet')
+              ? [...chosen, fullActionMap.get('action:sheet')!]
               : chosen,
         };
       }
 
-      // Smart mode: multi-file queue promotes sorting/numbering, single file promotes preview/SHA-256
+      // Smart mode: multi-file queue promotes sorting; single-file shows disabled Reverse slice alongside active single-file tools
       const smartActionIds =
         files.length > 1
           ? [
@@ -1023,14 +1049,14 @@ export default function App() {
               'action:share',
               'local:FILE_HASH_INFO',
               'local:BATCH_RENAME',
-              'local:ZIP_CREATE',
+              'action:reverse',
             ];
 
       return {
         wheelTitle: t('FileActions', lang),
         wheelActions: smartActionIds
-          .filter((id) => actionMap.has(id))
-          .map((id) => actionMap.get(id)!),
+          .filter((id) => fullActionMap.has(id))
+          .map((id) => fullActionMap.get(id)!),
       };
     }
 
@@ -1119,8 +1145,13 @@ export default function App() {
         setTab('library');
         break;
       case 'nav:server':
+        setToolMode(null);
+        setSettingsCategory('downloads');
+        setTab('settings');
+        break;
       case 'nav:settings':
         setToolMode(null);
+        setSettingsCategory('appearance');
         setTab('settings');
         break;
     }
@@ -1209,6 +1240,7 @@ export default function App() {
                 setShowGearCloud(false);
                 setJob({status: 'idle'});
                 setToolMode(null);
+                setSettingsCategory('appearance');
                 setTab('settings');
               }}
               onFocus={() => setShowGearCloud(true)}
@@ -1289,6 +1321,7 @@ export default function App() {
               setDirectFormat(null);
               setDirectServerTool(null);
               setToolMode(null);
+              setSettingsCategory('downloads');
               setTab('settings');
             }}
           />
@@ -1308,6 +1341,7 @@ export default function App() {
             serverStatus={serverStatus}
             updateInfo={updateInfo}
             checkingUpdate={checkingUpdate}
+            initialCategory={settingsCategory}
             onChangePrefs={setPrefs}
             onTestServer={handleTestServer}
             onCheckUpdate={handleCheckUpdate}
@@ -1350,6 +1384,7 @@ export default function App() {
       {/* Draggable Corner-Snapping Radial Wheel Menu FAB + Hover Info Cloud */}
       {!toolMode && job.status === 'idle' && tab !== 'settings' && (
         <WheelFab
+          hidden={wheelKind !== null}
           side={prefs.wheelSide ?? 'right'}
           onChangeSide={(wheelSide) => setPrefs((p) => ({...p, wheelSide}))}
           onHoverChange={setShowWheelCloud}
@@ -1387,16 +1422,21 @@ export default function App() {
         lang={lang}
         onDismiss={() => setWheelKind(null)}
         onSelect={handleWheelSelect}
-        onOpenCustomize={() => {
-          const initialTab: CustomizeWheelTab =
-            wheelKind === 'convert'
-              ? 'convert'
-              : wheelKind === 'actions'
-                ? 'actions'
-                : 'tools';
-          setWheelKind(null);
-          setCustomizeModal({open: true, tab: initialTab});
-        }}
+        onDisabledSelect={() => showToast(t('SliceDisabledToast', lang))}
+        onOpenCustomize={
+          wheelKind === 'convert' || wheelKind === 'tools' || wheelKind === 'actions'
+            ? () => {
+                const initialTab: CustomizeWheelTab =
+                  wheelKind === 'convert'
+                    ? 'convert'
+                    : wheelKind === 'actions'
+                      ? 'actions'
+                      : 'tools';
+                setWheelKind(null);
+                setCustomizeModal({open: true, tab: initialTab});
+              }
+            : undefined
+        }
       />
 
       <WheelCustomizeModal
@@ -1574,7 +1614,7 @@ export default function App() {
       )}
 
       {toast && (
-        <div className="fixed bottom-[calc(var(--morph-safe-bottom)+5.5rem)] left-1/2 z-50 max-w-[90vw] -translate-x-1/2 truncate rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-xl">
+        <div className="pointer-events-none fixed bottom-[calc(var(--morph-safe-bottom)+5.5rem)] left-1/2 z-[70] max-w-[90vw] -translate-x-1/2 truncate rounded-full border border-[var(--line)] bg-[var(--surface)] px-4 py-2 text-xs font-semibold text-[var(--ink)] shadow-xl">
           {toast}
         </div>
       )}
