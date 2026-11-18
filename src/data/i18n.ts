@@ -320,10 +320,6 @@ const DICT: Record<string, {tr: string; en: string}> = {
   ReleasePreview: {tr: 'Beta', en: 'Beta'},
   OpenGithubRepo: {tr: 'GitHub Deposu', en: 'GitHub Repo'},
   DownloadApk: {tr: 'APK İndir', en: 'Download APK'},
-  ApkBuildHint: {
-    tr: 'Otomatik GitHub APK dağıtımı',
-    en: 'Automated GitHub APK releases',
-  },
   SavedToDocuments: {tr: 'Belgeler/Morph klasörüne kaydedildi', en: 'Saved to Documents/Morph'},
 
   // App Permissions & Clipboard
@@ -361,7 +357,7 @@ const DICT: Record<string, {tr: string; en: string}> = {
   PasteLink: {tr: 'Yapıştır', en: 'Paste'},
   ClipboardEmpty: {tr: 'Panoda bağlantı bulunamadı', en: 'No link found in clipboard'},
 
-  // Smart Download Preferences & Selectable Engines (1.1.9 Beta)
+  // Smart Download Preferences & Selectable Engines
   DownloadPrefsSection: {tr: 'Akıllı İndirme Ayarları', en: 'Smart Download Settings'},
   DownloadPrefsDesc: {
     tr: 'Mobil veri koruması, varsayılan çözünürlük ve çoklu parça hızlandırma tercihlerini yönet.',
@@ -387,7 +383,7 @@ const DICT: Record<string, {tr: string; en: string}> = {
   LiveNetOffline: {tr: 'Çevrimdışı', en: 'Offline'},
   LiveNetActive: {tr: 'Ağ Hazır', en: 'Online'},
 
-  DownloadEnginesSection: {tr: 'İndirme Motorları (Beta Test)', en: 'Download Engines (Beta Test)'},
+  DownloadEnginesSection: {tr: 'İndirme Motorları', en: 'Download Engines'},
   DownloadEnginesDesc: {
     tr: 'Kullanmak istediğin indirme aracını seç. Gerekli motorları dahili olarak etkinleştirebilir veya İndir & Kur butonuyla güncelleyebilirsin.',
     en: 'Choose your active download engine. Initialize built-in modules or download/update on-demand engines.',
@@ -598,14 +594,37 @@ const DICT: Record<string, {tr: string; en: string}> = {
   WheelAutoNum: {tr: 'Numarala', en: 'Auto-Num'},
   WheelSettingsSavedToast: {tr: 'Çark tercihleri kaydedildi', en: 'Wheel preferences saved'},
 
-  // Settings Categories & APK Signing Info
+  // Settings Categories, Appearance Controls & Wheel Cap
   SetCatAppearance: {tr: 'Görünüm', en: 'Appearance'},
   SetCatDownloads: {tr: 'İndirme', en: 'Downloads'},
   SetCatPermissions: {tr: 'İzinler', en: 'Permissions'},
   SetCatAbout: {tr: 'Güncelleme', en: 'Updates'},
-  ApkSignatureReady: {
-    tr: 'Kalıcı Morph imzalı APK · Sonraki güncellemeler mevcut kurulumun üzerine sorunsuz yüklenir.',
-    en: 'Permanent Morph signed APK · Future updates install seamlessly in-place.',
+  CurrentVersionLabel: {tr: 'Mevcut Sürüm', en: 'Current Version'},
+  WheelMaxLimitToast: {
+    tr: 'Çarka en fazla 15 seçenek eklenebilir',
+    en: 'Maximum 15 items per wheel',
+  },
+  UiInterfaceSection: {tr: 'Arayüz & Etkileşim', en: 'Interface & Interaction'},
+  UiScaleLabel: {tr: 'Yazı & Arayüz Boyutu', en: 'Text & UI Scale'},
+  ScaleCompact: {tr: 'Kompakt', en: 'Compact'},
+  ScaleDefault: {tr: 'Standart', en: 'Default'},
+  ScaleLarge: {tr: 'Büyük', en: 'Large'},
+  CornerStyleLabel: {tr: 'Köşe Yumuşaklığı', en: 'Corner Style'},
+  CornerSharp: {tr: 'Keskin', en: 'Sharp'},
+  CornerBalanced: {tr: 'Dengeli', en: 'Balanced'},
+  CornerSoft: {tr: 'Yumuşak', en: 'Soft'},
+  WheelSideLabel: {tr: 'Hızlı Çark Konumu', en: 'Quick Wheel Side'},
+  WheelSideLeft: {tr: 'Sol Alt', en: 'Bottom Left'},
+  WheelSideRight: {tr: 'Sağ Alt', en: 'Bottom Right'},
+  ReducedMotionLabel: {tr: 'Azaltılmış Hareket', en: 'Reduced Motion'},
+  ReducedMotionDesc: {
+    tr: 'Geçişleri ve sürekli dönen simge animasyonlarını sadeleştirir.',
+    en: 'Simplifies transitions and continuous icon animations.',
+  },
+  HapticsLabel: {tr: 'Dokunma Titreşimi', en: 'Haptic Feedback'},
+  HapticsDesc: {
+    tr: 'Çark dilimleri arasında gezinirken hafif titreşim verir.',
+    en: 'Provides subtle vibration while gliding across radial slices.',
   },
 };
 

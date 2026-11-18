@@ -59,6 +59,7 @@ import {
   DEFAULT_WHEEL_CONFIG,
   ExportItem,
   JobState,
+  MAX_WHEEL_SLICES,
   PickedFile,
   Prefs,
   SERVER_TOOLS,
@@ -217,7 +218,7 @@ export default function App() {
   const serverReady = prefs.serverUrl.trim().length > 0;
 
   useEffect(() => {
-    const dark = applyThemeTokens(prefs.theme, prefs.preset);
+    const dark = applyThemeTokens(prefs.theme, prefs.preset, prefs);
     setIsDark(dark);
     savePrefs(prefs);
   }, [prefs]);
@@ -226,12 +227,12 @@ export default function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => {
       if (prefs.theme === 'system') {
-        setIsDark(applyThemeTokens('system', prefs.preset));
+        setIsDark(applyThemeTokens('system', prefs.preset, prefs));
       }
     };
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
-  }, [prefs.theme, prefs.preset]);
+  }, [prefs]);
 
   useEffect(() => {
     loadLibraryItems().then(setLibrary);
@@ -817,7 +818,7 @@ export default function App() {
 
       if (mode === 'all') {
         const inapplicable = ALL_CONVERT_FORMATS_CATALOG.filter((fmt) => !compatibleSet.has(fmt));
-        const slices: WheelActionItem[] =
+        const rawSlices: WheelActionItem[] =
           compatible.length === 0
             ? [
                 {id: 'local:ZIP_CREATE', label: t('WheelZip', lang), icon: FileArchive},
@@ -828,6 +829,13 @@ export default function App() {
                 ...smartTargets.map((fmt) => toFormatSlice(fmt, true)),
                 ...inapplicable.map((fmt) => toFormatSlice(fmt, false)),
               ];
+        const slices =
+          rawSlices.length > MAX_WHEEL_SLICES
+            ? [
+                ...rawSlices.slice(0, MAX_WHEEL_SLICES - 1),
+                {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
+              ]
+            : rawSlices;
         return {
           wheelTitle: t('Convert', lang),
           wheelActions: slices,
@@ -835,18 +843,20 @@ export default function App() {
       }
 
       if (mode === 'pinned' && wheelConfig.pinnedConvert.length > 0) {
-        const pinnedSlices = wheelConfig.pinnedConvert.map((fmt) =>
+        const cappedPinned = wheelConfig.pinnedConvert.slice(0, MAX_WHEEL_SLICES);
+        const pinnedSlices = cappedPinned.map((fmt) =>
           toFormatSlice(fmt, compatibleSet.has(fmt))
         );
-        const hasMoreCompatible = compatible.some((fmt) => !wheelConfig.pinnedConvert.includes(fmt));
+        const hasMoreCompatible = compatible.some((fmt) => !cappedPinned.includes(fmt));
+        const finalSlices = hasMoreCompatible
+          ? [
+              ...pinnedSlices.slice(0, MAX_WHEEL_SLICES - 1),
+              {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
+            ]
+          : pinnedSlices;
         return {
           wheelTitle: t('Convert', lang),
-          wheelActions: hasMoreCompatible
-            ? [
-                ...pinnedSlices,
-                {id: 'open:convert', label: t('AllFormatsShort', lang), icon: ArrowLeftRight},
-              ]
-            : pinnedSlices,
+          wheelActions: finalSlices,
         };
       }
 
@@ -915,30 +925,40 @@ export default function App() {
       if (mode === 'all') {
         const seen = new Set(smartIds);
         const inapplicableIds = Array.from(allCatalogMap.keys()).filter((id) => !seen.has(id));
+        const rawSlices = [
+          ...smartIds.map((id) => allCatalogMap.get(id)!),
+          ...inapplicableIds.map((id) => allCatalogMap.get(id)!),
+        ];
+        const slices =
+          rawSlices.length > MAX_WHEEL_SLICES
+            ? [
+                ...rawSlices.slice(0, MAX_WHEEL_SLICES - 1),
+                {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
+              ]
+            : rawSlices;
         return {
           wheelTitle: t('Tools', lang),
-          wheelActions: [
-            ...smartIds.map((id) => allCatalogMap.get(id)!),
-            ...inapplicableIds.map((id) => allCatalogMap.get(id)!),
-          ],
+          wheelActions: slices,
         };
       }
 
       if (mode === 'pinned' && wheelConfig.pinnedTools.length > 0) {
-        const pinnedSlices = wheelConfig.pinnedTools
+        const cappedPinned = wheelConfig.pinnedTools
           .filter((id) => allCatalogMap.has(id))
-          .map((id) => allCatalogMap.get(id)!);
+          .slice(0, MAX_WHEEL_SLICES);
+        const pinnedSlices = cappedPinned.map((id) => allCatalogMap.get(id)!);
         const hasMoreCompatible = Array.from(compatibleSet).some(
-          (id) => !wheelConfig.pinnedTools.includes(id)
+          (id) => !cappedPinned.includes(id)
         );
+        const finalSlices = hasMoreCompatible
+          ? [
+              ...pinnedSlices.slice(0, MAX_WHEEL_SLICES - 1),
+              {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
+            ]
+          : pinnedSlices;
         return {
           wheelTitle: t('Tools', lang),
-          wheelActions: hasMoreCompatible
-            ? [
-                ...pinnedSlices,
-                {id: 'open:tools', label: t('AllToolsShort', lang), icon: SlidersHorizontal},
-              ]
-            : pinnedSlices,
+          wheelActions: finalSlices,
         };
       }
 
@@ -1012,13 +1032,14 @@ export default function App() {
       if (mode === 'all') {
         return {
           wheelTitle: t('FileActions', lang),
-          wheelActions: Array.from(fullActionMap.values()),
+          wheelActions: Array.from(fullActionMap.values()).slice(0, MAX_WHEEL_SLICES),
         };
       }
 
       if (mode === 'pinned' && wheelConfig.pinnedActions.length > 0) {
         const chosen = wheelConfig.pinnedActions
           .filter((id) => fullActionMap.has(id))
+          .slice(0, MAX_WHEEL_SLICES)
           .map((id) => fullActionMap.get(id)!);
         const hasSheet = chosen.some((c) => c.id === 'action:sheet');
         const compatibleCount = Array.from(fullActionMap.values()).filter((a) => !a.disabled).length;
@@ -1027,7 +1048,7 @@ export default function App() {
           wheelTitle: t('FileActions', lang),
           wheelActions:
             compatibleCount > activeChosenCount && !hasSheet && fullActionMap.has('action:sheet')
-              ? [...chosen, fullActionMap.get('action:sheet')!]
+              ? [...chosen.slice(0, MAX_WHEEL_SLICES - 1), fullActionMap.get('action:sheet')!]
               : chosen,
         };
       }
@@ -1451,6 +1472,7 @@ export default function App() {
           }))
         }
         onClose={() => setCustomizeModal((s) => ({...s, open: false}))}
+        onShowToast={showToast}
       />
 
       <FileActionsModal

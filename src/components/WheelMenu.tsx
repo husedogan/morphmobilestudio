@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {ChevronLeft, ChevronRight, LucideIcon} from 'lucide-react';
-import {Lang, t} from '../data/i18n';
+import {LucideIcon} from 'lucide-react';
+import {Lang} from '../data/i18n';
+import {MAX_WHEEL_SLICES} from '../data/models';
 
 export interface WheelActionItem {
   id: string;
@@ -20,8 +21,16 @@ interface WheelMenuProps {
   onOpenCustomize?: () => void;
 }
 
-const MAX_SLICES_PER_PAGE = 14;
 const CENTER_HOLD_MS = 3000;
+
+function vibrateIfAllowed(pattern: number | number[]) {
+  if (typeof document !== 'undefined' && document.documentElement.dataset.haptics === 'off') {
+    return;
+  }
+  if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    navigator.vibrate(pattern);
+  }
+}
 
 /**
  * Blocks delayed browser-synthesized touch ghost clicks (`isTrusted === true`) for 340ms
@@ -61,7 +70,7 @@ interface WheelGeometry {
 function getWheelGeometry(count: number): WheelGeometry {
   if (count >= 8) {
     const size = 384;
-    const outerCount = Math.ceil(count * 0.62);
+    const outerCount = Math.min(9, Math.ceil(count * 0.6));
     const innerCount = Math.max(1, count - outerCount);
     return {
       size,
@@ -220,7 +229,6 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   open,
   title,
   actions,
-  lang,
   onDismiss,
   onSelect,
   onDisabledSelect,
@@ -229,7 +237,6 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   const [activeIndex, setActiveIndex] = useState<number>(-1);
   const [holdProgress, setHoldProgress] = useState<number>(0);
   const [orbitDeg, setOrbitDeg] = useState<number>(0);
-  const [page, setPage] = useState<number>(0);
 
   const wheelRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<number>(-1);
@@ -238,12 +245,7 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   const holdingCenterRef = useRef<boolean>(false);
   const completedHoldRef = useRef<boolean>(false);
 
-  const totalPages = Math.max(1, Math.ceil(actions.length / MAX_SLICES_PER_PAGE));
-  const safePage = Math.min(page, totalPages - 1);
-  const pageActions =
-    totalPages > 1
-      ? actions.slice(safePage * MAX_SLICES_PER_PAGE, (safePage + 1) * MAX_SLICES_PER_PAGE)
-      : actions;
+  const pageActions = actions.slice(0, MAX_WHEEL_SLICES);
 
   const stopHoldAnimation = useCallback((resetVisual = true) => {
     if (holdRafRef.current !== null) {
@@ -266,14 +268,9 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
     if (!open) {
       setActiveIndex(-1);
       activeRef.current = -1;
-      setPage(0);
       stopHoldAnimation(true);
     }
   }, [open, stopHoldAnimation]);
-
-  useEffect(() => {
-    setPage(0);
-  }, [title, actions.length]);
 
   useEffect(() => {
     return () => {
@@ -287,9 +284,7 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
   const startCenterHold = useCallback(() => {
     if (!onOpenCustomize || holdingCenterRef.current || completedHoldRef.current) return;
     holdingCenterRef.current = true;
-    if ('vibrate' in navigator) {
-      navigator.vibrate(10);
-    }
+    vibrateIfAllowed(10);
     const startAt = performance.now();
 
     const tick = (now: number) => {
@@ -306,9 +301,7 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
         holdingCenterRef.current = false;
         completedHoldRef.current = true;
         installGhostClickShield();
-        if ('vibrate' in navigator) {
-          navigator.vibrate([18, 28, 20]);
-        }
+        vibrateIfAllowed([18, 28, 20]);
         // Brief beat so the crisp solid Morph gear is clearly seen before opening modal
         openTimerRef.current = window.setTimeout(() => {
           openTimerRef.current = null;
@@ -330,8 +323,8 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
         activeRef.current = idx;
         setActiveIndex(idx);
         const item = idx >= 0 && idx < pageActions.length ? pageActions[idx] : undefined;
-        if (idx >= 0 && !item?.disabled && 'vibrate' in navigator) {
-          navigator.vibrate(8);
+        if (idx >= 0 && !item?.disabled) {
+          vibrateIfAllowed(8);
         }
       }
 
@@ -521,16 +514,6 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <span>{title}</span>
-          {totalPages > 1 && (
-            <>
-              <span aria-hidden="true" className="text-[var(--muted)]">
-                ·
-              </span>
-              <span className="font-mono-num tabular-nums text-[11px] font-semibold text-[var(--accent)]">
-                {safePage + 1}/{totalPages}
-              </span>
-            </>
-          )}
         </div>
       )}
 
@@ -571,11 +554,11 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           if (hit.zone === 'slice' && hit.sliceIndex >= 0 && hit.sliceIndex < count) {
             const chosen = pageActions[hit.sliceIndex];
             if (chosen.disabled) {
-              if ('vibrate' in navigator) navigator.vibrate([10, 24, 10]);
+              vibrateIfAllowed([10, 24, 10]);
               onDisabledSelect?.(chosen);
               return;
             }
-            if ('vibrate' in navigator) navigator.vibrate(14);
+            vibrateIfAllowed(14);
             onSelect(chosen.id);
             installGhostClickShield();
             return;
@@ -731,36 +714,6 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           )}
         </div>
       </div>
-
-      {/* Multi-ring pagination bar when more than 14 slices are enabled */}
-      {totalPages > 1 && (
-        <div
-          className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)]/95 p-1 shadow-xl"
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            onClick={() => setPage((p) => (p - 1 + totalPages) % totalPages)}
-            aria-label={t('WheelPagePrev', lang)}
-            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-full border border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="px-2.5 font-mono-num tabular-nums text-xs font-bold text-[var(--ink)] whitespace-nowrap">
-            {safePage + 1} / {totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => (p + 1) % totalPages)}
-            aria-label={t('WheelPageNext', lang)}
-            className="flex min-h-[38px] min-w-[38px] items-center justify-center rounded-full border border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };
@@ -939,7 +892,7 @@ export const WheelFab: React.FC<{
 
         if (ms >= HEAT_MS && !vibrated15Ref.current) {
           vibrated15Ref.current = true;
-          if ('vibrate' in navigator) navigator.vibrate(18);
+          vibrateIfAllowed(18);
         }
 
         setHeat(nextHeat);
@@ -995,7 +948,7 @@ export const WheelFab: React.FC<{
             const rect = wrapperRef.current?.getBoundingClientRect();
             const cx = rect ? rect.left + rect.width / 2 : window.innerWidth - 48;
             const cy = rect ? rect.top + rect.height / 2 : window.innerHeight - 48;
-            if ('vibrate' in navigator) navigator.vibrate([22, 35, 16]);
+            vibrateIfAllowed([22, 35, 16]);
             if (rect) {
               const dropSide: 'left' | 'right' = cx < window.innerWidth / 2 ? 'left' : 'right';
               onChangeSide?.(dropSide);
@@ -1237,9 +1190,9 @@ export const WheelFab: React.FC<{
       ? '#71717A'
       : charLevel > 0.3
         ? '#A1A1AA'
-        : isBlazing
+        : isBlazing || heat > 0.35
           ? '#FFF3C4'
-          : '#FFFFFF';
+          : 'var(--accent-ink)';
 
   let ashBtnOpacity = 1;
   let ashBtnScale = 1;
@@ -1459,7 +1412,7 @@ export const WheelFab: React.FC<{
           }}
           className={
             className ??
-            `morph-accent-btn no-touch-callout relative flex h-14 w-14 touch-none select-none items-center justify-center rounded-full border border-white/20 text-white shadow-xl transition-transform duration-150 ${
+            `morph-accent-btn no-touch-callout relative flex h-14 w-14 touch-none select-none items-center justify-center rounded-full border border-white/20 shadow-xl transition-transform duration-150 ${
               isDragging
                 ? 'scale-110 cursor-grabbing shadow-2xl'
                 : isBlazing || isPressing

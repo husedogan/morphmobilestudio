@@ -109,6 +109,8 @@ export type VideoQualityPref = 'best' | '1080p' | '720p' | '480p' | '360p';
 
 export type WheelDisplayMode = 'smart' | 'pinned' | 'all';
 
+export const MAX_WHEEL_SLICES = 15;
+
 export interface WheelConfigPrefs {
   mode: WheelDisplayMode;
   pinnedConvert: string[];
@@ -142,6 +144,9 @@ export const DEFAULT_WHEEL_CONFIG: WheelConfigPrefs = {
   ],
 };
 
+export type UiScalePref = 'compact' | 'default' | 'large';
+export type CornerStylePref = 'sharp' | 'balanced' | 'soft';
+
 export interface Prefs {
   theme: 'system' | 'dark' | 'light';
   preset: string;
@@ -149,6 +154,10 @@ export interface Prefs {
   serverUrl: string;
   serverToken: string;
   wheelSide?: 'left' | 'right';
+  uiScale?: UiScalePref;
+  cornerStyle?: CornerStylePref;
+  reducedMotion?: boolean;
+  hapticsEnabled?: boolean;
   lastEngineAction?: 'update' | 'manage';
   lastEngineSegment?: 'ffmpeg' | 'office' | 'link' | null;
   downloadEngine?: DownloadEngineId;

@@ -16,15 +16,6 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({lang, variant
   if (isInstalled) return null;
 
   if (!isInstallable && !isIOS) {
-    if (variant === 'card') {
-      return (
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--inset)] p-4 text-xs text-[var(--muted)]">
-          {lang === 'tr'
-            ? 'Tarayıcı menüsünden “Ana ekrana ekle” veya “Uygulamayı yükle” seçeneğini kullanarak telefonuna uygulama gibi kurabilirsin.'
-            : 'Use your browser menu (“Add to Home Screen” / “Install App”) to install Morph directly on your phone.'}
-        </div>
-      );
-    }
     return null;
   }
 
@@ -36,11 +27,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({lang, variant
           onClick={install}
           className={
             variant === 'card'
-              ? 'morph-accent-btn flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-transform active:scale-[0.98]'
+              ? 'morph-accent-btn flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-xs font-semibold transition-transform active:scale-[0.98] whitespace-nowrap'
               : 'morph-accent-btn flex min-h-[36px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap shrink-0 transition-transform active:scale-[0.97]'
           }
         >
-          <Download className="h-3.5 w-3.5" />
+          <Download className="h-3.5 w-3.5 shrink-0" />
           <span>{t('InstallApp', lang)}</span>
         </button>
       ) : (
@@ -49,11 +40,11 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({lang, variant
           onClick={() => setShowIOSGuide(true)}
           className={
             variant === 'card'
-              ? 'flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-[var(--line)] bg-[var(--inset)] px-5 py-2.5 text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)]'
+              ? 'flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--inset)] px-4 text-xs font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)] whitespace-nowrap'
               : 'flex min-h-[36px] items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--inset)] px-3 py-1.5 text-xs font-medium text-[var(--ink)] whitespace-nowrap shrink-0'
           }
         >
-          <Smartphone className="h-3.5 w-3.5 text-[var(--accent)]" />
+          <Smartphone className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
           <span>{t('InstallIOS', lang)}</span>
         </button>
       )}

@@ -1,10 +1,12 @@
-# Sürüm Geçmişi (Changelog)
+# Sürüm Geçmişi
 
-Sürüm numaralandırması **Morph 1.1.2** ile başlar:
-- **Çift son numara (`1.1.2`, `1.1.4`, `1.1.6`, ...)** → **Kararlı** (GitHub Releases *Latest*)
-- **Tek son numara (`1.1.3`, `1.1.5`, ...)** → **Beta** (GitHub Releases *Pre-release*)
+## [1.1.10]
+- **NewPipe DASH Uyarlamalı Akış & Donanım Birleştirme (`MediaMuxer`):** YouTube’un ayrık ses+video (DASH) akışları için Android yerleşik `MediaExtractor` + `MediaMuxer` donanım birleştiricisi ve 9 MB parça tabanlı `Range` indirme desteği eklendi; NewPipe Extractor artık birleşik akış olmayan videolarda da `360p`–`1080p` MP4 çıktısı üretir.
+- **Radyal Çark 15 Dilim Sınırı & Hizalı Özelleştirme Penceresi:** Çark başına en fazla 15 seçenek sınırı getirilerek ikinci sayfa geçişi kaldırıldı; Çark Özelleştirme penceresindeki sıra numaraları ve yukarı taşıma okları sabit sütun genişliğiyle hizalandı.
+- **Genişletilmiş Görünüm Temaları & Kişiselleştirme Ayarları:** 60-30-10 renk dengesine sahip 6 yeni tema (**Saf Siyah OLED**, **Kuzey Buzulu**, **Çam Ormanı**, **Kumtaşı**, **Karbon Kırmızı**, **Monokrom**) ile **Yazı Boyutu**, **Köşe Yumuşaklığı**, **Çark Konumu**, **Azaltılmış Hareket** ve **Dokunma Titreşimi** ayarları eklendi.
+- **Sadeleştirilmiş Güncellemeler Ekranı:** Güncellemeler kartındaki eşit yükseklikli buton düzeni, tekil sürüm durumu satırı ve geliştirici iletişim kartı iyileştirildi.
 
-## [1.1.9] — Beta (Test Sürümü)
+## [1.1.9]
 - **Seçilebilir & Sonradan Kurulabilir İndirme Motorları (Test):** Ayarlar ve Bağlantıdan İndir ekranlarına 4 ayrı motor eklendi: **Morph Dahili Motor** (0 MB ek boyut, hızlı sosyal/bulut akışı), **NewPipe Extractor** (Android cihaz içi Java/Rhino YouTube & SoundCloud imza çözücü), **yt-dlp Yerel Motor (`youtubedl-android`)** (uygulama içinden tek dokunuşla **"İndir & Kur / Güncelle"** destekli Python tabanlı yerel indirici) ve **Cobalt API** (özel/genel Cobalt sunucu köprüsü).
 - **Akıllı İndirme ve Veri Koruma Ayarları:** Ayarlar ekranına **Sadece Wi-Fi'da İndir** (canlı ağ durumu algılamalı), **Mobil Veride Boyut Sınırı** (`50 MB` / `150 MB` / `500 MB` / `Sınırsız`), **Tercih Edilen Video Kalitesi** (`360p`–`1080p` / `En İyi`), **Hata Olursa Yedek Motora Otomatik Geç** ve **Çoklu Parça İndirme (`1x` / `4x` / `8x`)** seçenekleri eklendi.
 - **2 Saatlik / Büyük Video İndirme Mimarisi:** Android'de Base64 bellek darboğazı kaldırılarak doğrudan `Documents/Morph` klasörüne arka plan disk akışı, parça parça (`2 MB`) dosya yazımı, `100 MB` üzeri dosyalarda IndexedDB koruma kalkanı ve canlı bayt/yüzde ilerleme göstergesi eklendi.

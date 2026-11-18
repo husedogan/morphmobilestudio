@@ -31,11 +31,23 @@ export interface NativeYtDlpDownloadResult {
 
 export interface NativeNewPipeExtractResult {
   url: string;
+  audioUrl?: string;
   title: string;
   suggestedName: string;
   mimeType: string;
   durationSec: number;
+  adaptiveMuxRequired?: boolean;
+  resolution?: string;
   thumbnailUrl?: string;
+}
+
+export interface NativeNewPipeDownloadResult {
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  uri: string;
+  title: string;
 }
 
 export interface MorphEnginesPlugin {
@@ -55,6 +67,13 @@ export interface MorphEnginesPlugin {
     mode: string;
     quality: string;
   }): Promise<NativeNewPipeExtractResult>;
+  downloadWithNewPipe(options: {
+    url: string;
+    mode: string;
+    quality: string;
+    processId: string;
+  }): Promise<NativeNewPipeDownloadResult>;
+  cancelNewPipe(options: {processId: string}): Promise<{cancelled: boolean}>;
   downloadWithYtDlp(options: {
     url: string;
     mode: string;
@@ -66,6 +85,10 @@ export interface MorphEnginesPlugin {
   addListener(
     eventName: 'ytdlpProgress',
     listenerFunc: (event: {processId: string; progress: number; etaSec: number; line: string}) => void
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'newpipeProgress',
+    listenerFunc: (event: {processId: string; progress: number; line: string}) => void
   ): Promise<PluginListenerHandle>;
 }
 
@@ -272,7 +295,7 @@ export async function installOrUpdateEngineModule(
   if (!isNativeApp() && (engineId === 'ytdlp_native' || engineId === 'newpipe')) {
     const msg =
       lang === 'tr'
-        ? 'Bu yerel motor Android APK sürümünde cihaz içinde çalışır. Web önizlemesinde Dahili Motor veya Cobalt API kullanılır; GitHub’dan Beta APK’yı kurduğunda tek dokunuşla etkinleşir.'
+        ? 'Bu yerel motor Android APK sürümünde cihaz içinde çalışır. Web önizlemesinde Dahili Motor veya Cobalt API kullanılır.'
         : 'This native engine runs inside the Android APK. On Web preview, Built-in or Cobalt API is used.';
     diag.step(engineId, 'Web ortamında yerel APK modülü istendi (bilgilendirme gösterildi)');
     diag.finish('blocked', {error: msg});
@@ -536,15 +559,17 @@ export async function runEngineSelfTest(
         mode: 'video',
         quality: prefs.preferredVideoQuality || '720p',
       });
-      diag.step('newpipe', `Çözümlendi: ${extracted.title} (${extracted.mimeType})`);
+      const muxTag = extracted.adaptiveMuxRequired ? 'DASH + MediaMuxer' : 'Doğrudan MP4';
+      const resTag = extracted.resolution ? `${extracted.resolution} · ` : '';
+      diag.step('newpipe', `Çözümlendi: ${extracted.title} (${resTag}${muxTag})`);
       const rep = diag.finish('success');
       return {
         ok: true,
         reportCode: rep.id,
         summary:
           lang === 'tr'
-            ? `NewPipe testi başarılı: "${extracted.title.slice(0, 28)}" (${rep.elapsedMs} ms · ${rep.id}).`
-            : `NewPipe test passed (${rep.elapsedMs} ms · ${rep.id}).`,
+            ? `NewPipe hazır: ${resTag}${muxTag} (${rep.elapsedMs} ms · ${rep.id}).`
+            : `NewPipe ready: ${resTag}${muxTag} (${rep.elapsedMs} ms · ${rep.id}).`,
       };
     }
 

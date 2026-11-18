@@ -183,7 +183,7 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
             <button
               type="button"
               onClick={() => docInputRef.current?.click()}
-              className="morph-accent-btn flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold text-white shadow-md transition-transform active:scale-[0.98]"
+              className="morph-accent-btn flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold shadow-md transition-transform active:scale-[0.98]"
             >
               <Plus className="h-4 w-4" />
               <span>{files.length === 0 ? t('ChooseFiles', lang) : t('AddFiles', lang)}</span>

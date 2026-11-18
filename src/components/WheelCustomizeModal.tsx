@@ -19,6 +19,7 @@ import {
   ALL_TOOLS,
   ALL_WHEEL_ACTIONS_CATALOG,
   DEFAULT_WHEEL_CONFIG,
+  MAX_WHEEL_SLICES,
   SERVER_TOOLS,
   ToolId,
   WheelConfigPrefs,
@@ -37,6 +38,7 @@ interface WheelCustomizeModalProps {
   lang: Lang;
   onChangeConfig: (updater: (prev: WheelConfigPrefs) => WheelConfigPrefs) => void;
   onClose: () => void;
+  onShowToast?: (msg: string) => void;
 }
 
 export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
@@ -46,16 +48,19 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
   lang,
   onChangeConfig,
   onClose,
+  onShowToast,
 }) => {
   const [activeTab, setActiveTab] = useState<CustomizeWheelTab>(initialTab);
   const [toolSearch, setToolSearch] = useState('');
   const [toolCat, setToolCat] = useState<WheelToolCategory>('all');
+  const [limitAlert, setLimitAlert] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setActiveTab(initialTab);
       setToolSearch('');
       setToolCat('all');
+      setLimitAlert(null);
     }
   }, [open, initialTab]);
 
@@ -114,10 +119,22 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
     listKey: 'pinnedConvert' | 'pinnedTools' | 'pinnedActions',
     itemId: string
   ) => {
+    const currentList = (config[listKey] ?? []).slice(0, MAX_WHEEL_SLICES);
+    const alreadyExists = currentList.includes(itemId);
+    if (!alreadyExists && currentList.length >= MAX_WHEEL_SLICES) {
+      const msg = t('WheelMaxLimitToast', lang);
+      setLimitAlert(msg);
+      onShowToast?.(msg);
+      return;
+    }
+
+    setLimitAlert(null);
     onChangeConfig((prev) => {
-      const current = prev[listKey] ?? [];
+      const current = (prev[listKey] ?? []).slice(0, MAX_WHEEL_SLICES);
       const exists = current.includes(itemId);
-      const nextList = exists ? current.filter((x) => x !== itemId) : [...current, itemId];
+      const nextList = exists
+        ? current.filter((x) => x !== itemId)
+        : [...current, itemId].slice(0, MAX_WHEEL_SLICES);
       return {
         ...prev,
         mode: 'pinned',
@@ -133,7 +150,7 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
   ) => {
     e.stopPropagation();
     onChangeConfig((prev) => {
-      const current = [...(prev[listKey] ?? [])];
+      const current = [...(prev[listKey] ?? []).slice(0, MAX_WHEEL_SLICES)];
       const idx = current.indexOf(itemId);
       if (idx <= 0) return prev;
       const [picked] = current.splice(idx, 1);
@@ -172,12 +189,54 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
     },
   ];
 
-  const activePinnedCount =
+  const activePinnedList = (
     activeTab === 'convert'
-      ? config.pinnedConvert.length
+      ? config.pinnedConvert
       : activeTab === 'tools'
-        ? config.pinnedTools.length
-        : config.pinnedActions.length;
+        ? config.pinnedTools
+        : config.pinnedActions
+  ).slice(0, MAX_WHEEL_SLICES);
+
+  const activePinnedCount = activePinnedList.length;
+
+  /**
+   * Fixed-geometry right-hand control cluster so single-digit (#3) and two-digit (#12)
+   * badges NEVER shift the horizontal column alignment of the [ ↑ ] move-up arrow!
+   */
+  const renderOrderControls = (
+    listKey: 'pinnedConvert' | 'pinnedTools' | 'pinnedActions',
+    itemId: string,
+    orderIdx: number
+  ) => {
+    const pinned = orderIdx >= 0;
+    return (
+      <div className="flex shrink-0 items-center gap-1.5">
+        {pinned && orderIdx > 0 ? (
+          <button
+            type="button"
+            onClick={(e) => moveItemEarlier(listKey, itemId, e)}
+            title={t('MoveLeftShort', lang)}
+            aria-label={t('MoveLeftShort', lang)}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--accent)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent)] hover:text-[var(--accent-single-ink)]"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <span className="h-7 w-7 shrink-0" aria-hidden="true" />
+        )}
+
+        <div className="flex w-7 shrink-0 items-center justify-end">
+          {pinned ? (
+            <span className="font-mono-num tabular-nums text-right text-xs font-extrabold text-[var(--accent)]">
+              #{orderIdx + 1}
+            </span>
+          ) : (
+            <span className="h-4 w-4 rounded-full border border-[var(--line)]" />
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -252,16 +311,20 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
             </div>
           </div>
 
-          {/* 3 Wheel Section Tabs + Pinned Favorites Selector */}
+          {/* 3 Wheel Section Tabs + Pinned Favorites Selector (Max 15 per wheel) */}
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs font-semibold text-[var(--muted)]">
-                {t('PinnedItemsHeader', lang)} ·{' '}
-                <span className="font-mono-num tabular-nums text-[var(--ink)]">
-                  {activePinnedCount} {t('PinnedCountSuffix', lang)}
-                </span>
+                {t('PinnedItemsHeader', lang)}
               </p>
+              <span className="font-mono-num tabular-nums text-xs font-semibold text-[var(--ink)]">
+                {activePinnedCount} / {MAX_WHEEL_SLICES} {t('PinnedCountSuffix', lang)}
+              </span>
             </div>
+
+            {limitAlert && (
+              <p className="mt-1.5 text-xs font-medium text-[var(--accent)]">{limitAlert}</p>
+            )}
 
             <div className="mt-2 grid grid-cols-3 gap-1.5 rounded-2xl border border-[var(--line)] bg-[var(--inset)] p-1.5">
               {(
@@ -276,10 +339,13 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setActiveTab(id)}
+                    onClick={() => {
+                      setActiveTab(id);
+                      setLimitAlert(null);
+                    }}
                     className={`flex min-h-[42px] items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                       selected
-                        ? 'bg-[var(--accent)] text-white shadow-sm'
+                        ? 'morph-accent-solid shadow-sm'
                         : 'text-[var(--muted)] hover:text-[var(--ink)]'
                     }`}
                   >
@@ -290,11 +356,11 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
               })}
             </div>
 
-            {/* Tab Body: Convert Formats — 2 columns on phones so #10+ numbers never overflow */}
+            {/* Tab Body: Convert Formats — uniform h-12 cards & pixel-aligned arrows */}
             {activeTab === 'convert' && (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                 {ALL_CONVERT_FORMATS_CATALOG.map((fmt) => {
-                  const orderIdx = config.pinnedConvert.indexOf(fmt);
+                  const orderIdx = config.pinnedConvert.slice(0, MAX_WHEEL_SLICES).indexOf(fmt);
                   const pinned = orderIdx >= 0;
                   return (
                     <div
@@ -308,40 +374,22 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                           togglePinnedItem('pinnedConvert', fmt);
                         }
                       }}
-                      className={`flex min-h-[44px] min-w-0 cursor-pointer items-center justify-between gap-1.5 overflow-hidden rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
+                      className={`flex h-12 min-w-0 cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-2xl border px-3.5 text-xs font-bold transition-colors ${
                         pinned
-                          ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--ink)]'
+                          ? 'border-[var(--accent)] bg-[var(--accent)]/14 text-[var(--ink)]'
                           : 'border-[var(--line)] bg-[var(--inset)] text-[var(--muted)] hover:text-[var(--ink)]'
                       }`}
                     >
-                      <span className="truncate font-mono-num uppercase">{fmt}</span>
-                      <div className="flex shrink-0 items-center gap-1">
-                        {pinned && orderIdx > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => moveItemEarlier('pinnedConvert', fmt, e)}
-                            title={t('MoveLeftShort', lang)}
-                            aria-label={t('MoveLeftShort', lang)}
-                            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--surface)] text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white"
-                          >
-                            <ArrowUp className="h-3 w-3" />
-                          </button>
-                        )}
-                        {pinned ? (
-                          <span className="shrink-0 font-mono-num tabular-nums text-[11px] font-extrabold text-[var(--accent)]">
-                            #{orderIdx + 1}
-                          </span>
-                        ) : (
-                          <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-[var(--line)]" />
-                        )}
-                      </div>
+                      {/* ASCII .toUpperCase() prevents Turkish locale CSS uppercase turning gif/ico/avi into GİF/İCO/AVİ */}
+                      <span className="truncate font-mono-num">{fmt.toUpperCase()}</span>
+                      {renderOrderControls('pinnedConvert', fmt, orderIdx)}
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {/* Tab Body: Tools with Category Filters */}
+            {/* Tab Body: Tools with Category Filters — uniform h-[60px] cards & aligned arrows */}
             {activeTab === 'tools' && (
               <div className="mt-3 space-y-2.5">
                 <div className="flex flex-wrap gap-1.5">
@@ -379,13 +427,13 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                     value={toolSearch}
                     onChange={(e) => setToolSearch(e.target.value)}
                     placeholder={t('SearchToolsPlaceholder', lang)}
-                    className="min-h-[44px] w-full rounded-2xl border border-[var(--line)] bg-[var(--inset)] pl-10 pr-4 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
+                    className="h-11 w-full rounded-2xl border border-[var(--line)] bg-[var(--inset)] pl-10 pr-4 text-xs text-[var(--ink)] outline-none focus:border-[var(--accent)]"
                   />
                 </div>
 
                 <div className="grid max-h-60 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                   {filteredToolCatalog.map((tool) => {
-                    const orderIdx = config.pinnedTools.indexOf(tool.id);
+                    const orderIdx = config.pinnedTools.slice(0, MAX_WHEEL_SLICES).indexOf(tool.id);
                     const pinned = orderIdx >= 0;
                     return (
                       <div
@@ -399,7 +447,7 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                             togglePinnedItem('pinnedTools', tool.id);
                           }
                         }}
-                        className={`flex min-h-[52px] min-w-0 cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-2xl border px-3.5 py-2.5 text-left transition-colors ${
+                        className={`flex h-[60px] min-w-0 cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-2xl border px-3.5 text-left transition-colors ${
                           pinned
                             ? 'border-[var(--accent)] bg-[var(--accent)]/14 text-[var(--ink)]'
                             : 'border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] hover:border-[var(--accent)]/45'
@@ -414,26 +462,7 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                           </p>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          {pinned && orderIdx > 0 && (
-                            <button
-                              type="button"
-                              onClick={(e) => moveItemEarlier('pinnedTools', tool.id, e)}
-                              title={t('MoveLeftShort', lang)}
-                              aria-label={t('MoveLeftShort', lang)}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--accent)]"
-                            >
-                              <ArrowUp className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                          {pinned ? (
-                            <span className="shrink-0 font-mono-num tabular-nums text-xs font-extrabold text-[var(--accent)]">
-                              #{orderIdx + 1}
-                            </span>
-                          ) : (
-                            <span className="h-4 w-4 shrink-0 rounded-full border border-[var(--line)]" />
-                          )}
-                        </div>
+                        {renderOrderControls('pinnedTools', tool.id, orderIdx)}
                       </div>
                     );
                   })}
@@ -441,11 +470,11 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
               </div>
             )}
 
-            {/* Tab Body: File Actions */}
+            {/* Tab Body: File Actions — uniform h-12 cards & aligned arrows */}
             {activeTab === 'actions' && (
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {ALL_WHEEL_ACTIONS_CATALOG.map((act) => {
-                  const orderIdx = config.pinnedActions.indexOf(act.id);
+                  const orderIdx = config.pinnedActions.slice(0, MAX_WHEEL_SLICES).indexOf(act.id);
                   const pinned = orderIdx >= 0;
                   return (
                     <div
@@ -459,33 +488,14 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
                           togglePinnedItem('pinnedActions', act.id);
                         }
                       }}
-                      className={`flex min-h-[48px] cursor-pointer items-center justify-between gap-2 rounded-2xl border px-3.5 py-2.5 transition-colors ${
+                      className={`flex h-12 min-w-0 cursor-pointer items-center justify-between gap-2 overflow-hidden rounded-2xl border px-3.5 transition-colors ${
                         pinned
                           ? 'border-[var(--accent)] bg-[var(--accent)]/14 text-[var(--ink)]'
                           : 'border-[var(--line)] bg-[var(--inset)] text-[var(--ink)] hover:border-[var(--accent)]/45'
                       }`}
                     >
                       <span className="truncate text-xs font-bold">{t(act.labelKey, lang)}</span>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {pinned && orderIdx > 0 && (
-                          <button
-                            type="button"
-                            onClick={(e) => moveItemEarlier('pinnedActions', act.id, e)}
-                            title={t('MoveLeftShort', lang)}
-                            aria-label={t('MoveLeftShort', lang)}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--accent)]"
-                          >
-                            <ArrowUp className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        {pinned ? (
-                          <span className="font-mono-num text-xs font-extrabold text-[var(--accent)]">
-                            #{orderIdx + 1}
-                          </span>
-                        ) : (
-                          <span className="h-4 w-4 rounded-full border border-[var(--line)]" />
-                        )}
-                      </div>
+                      {renderOrderControls('pinnedActions', act.id, orderIdx)}
                     </div>
                   );
                 })}
@@ -500,7 +510,10 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
         <div className="flex items-center justify-between gap-2.5 border-t border-[var(--line)] px-5 py-3.5">
           <button
             type="button"
-            onClick={() => onChangeConfig(() => DEFAULT_WHEEL_CONFIG)}
+            onClick={() => {
+              setLimitAlert(null);
+              onChangeConfig(() => DEFAULT_WHEEL_CONFIG);
+            }}
             className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--inset)] px-4 text-xs font-semibold text-[var(--muted)] transition-colors hover:text-[var(--ink)] whitespace-nowrap shrink-0"
           >
             <RotateCcw className="h-3.5 w-3.5 shrink-0" />
@@ -510,7 +523,7 @@ export const WheelCustomizeModal: React.FC<WheelCustomizeModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="morph-accent-btn flex min-h-[44px] min-w-[116px] items-center justify-center rounded-full px-6 text-xs font-semibold text-white whitespace-nowrap shrink-0"
+            className="morph-accent-btn flex min-h-[44px] min-w-[116px] items-center justify-center rounded-full px-6 text-xs font-semibold whitespace-nowrap shrink-0"
           >
             {t('Done', lang)}
           </button>

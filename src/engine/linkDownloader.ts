@@ -520,7 +520,7 @@ async function runSingleEngineAttempt(
     }
   }
 
-  // 2. Native Android NewPipe Extractor engine
+  // 2. Native Android NewPipe Extractor engine (Progressive + DASH Adaptive MediaMuxer)
   if (engineId === 'newpipe') {
     if (!isNativeApp()) {
       throw new Error(
@@ -529,31 +529,53 @@ async function runSingleEngineAttempt(
           : 'NewPipe Extractor requires the Android APK.'
       );
     }
-    diag.step('newpipe', `NewPipe Extractor ile akış çözümleniyor (${quality})`);
-    onProgress(0.18, 'NewPipe akış çözümlüyor…');
-    const extracted = await MorphEnginesNative.extractWithNewPipe({
-      url: normalized,
-      mode,
-      quality,
-    });
-    diag.setEffectiveEngine('newpipe', 'v0.27.1');
-    diag.step('newpipe', `Akış bulundu: ${extracted.suggestedName}`);
+    await ensureStoragePermission(true);
+    const procId = `morph-np-${Date.now().toString(36)}`;
+    diag.step('newpipe', `NewPipe Extractor başlatılıyor (${quality})`);
+    onProgress(0.14, 'NewPipe akış çözümlüyor…');
 
-    const targetUrl = mode === 'thumbnail' && extracted.thumbnailUrl ? extracted.thumbnailUrl : extracted.url;
-    return finalizeNativeDiskDownload(
-      {
-        url: targetUrl,
-        suggestedName: extracted.suggestedName,
-        headers: {'User-Agent': BROWSER_USER_AGENT},
-      },
-      normalized,
-      mode,
-      title,
-      net,
-      prefs,
-      onProgress,
-      signal
-    );
+    let listener: PluginListenerHandle | null = null;
+    const onAbort = () => {
+      MorphEnginesNative.cancelNewPipe({processId: procId}).catch(() => {});
+    };
+    signal?.addEventListener('abort', onAbort, {once: true});
+
+    try {
+      listener = await MorphEnginesNative.addListener('newpipeProgress', (ev) => {
+        if (ev.processId !== procId || signal?.aborted) return;
+        const pct = Math.max(0, Math.min(100, Number(ev.progress) || 0));
+        const ratio = Math.min(0.97, 0.14 + (pct / 100) * 0.83);
+        onProgress(ratio, ev.line || `NewPipe %${Math.round(pct)}`);
+      });
+
+      const res = await MorphEnginesNative.downloadWithNewPipe({
+        url: normalized,
+        mode,
+        quality,
+        processId: procId,
+      });
+
+      diag.setEffectiveEngine('newpipe', 'v0.27.1');
+      diag.step('newpipe', `İndirildi: ${res.fileName} (${formatBytes(res.size)})`);
+
+      const finalMime = res.mimeType || mimeFromExt(res.fileName.split('.').pop() || 'mp4');
+      onProgress(0.98, res.fileName);
+      return {
+        id: createId(),
+        name: res.fileName,
+        mime: finalMime,
+        size: res.size,
+        createdAt: Date.now(),
+        tool: title,
+        blob: new Blob([], {type: finalMime}),
+        nativeUri: res.uri,
+        nativePath: `Morph/${res.fileName}`,
+        nativeDirectory: Directory.Documents,
+      };
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
+      if (listener) await listener.remove().catch(() => {});
+    }
   }
 
   // 3. Cobalt API Engine (works on both Android APK & Web)

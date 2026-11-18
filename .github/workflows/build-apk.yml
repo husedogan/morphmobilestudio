@@ -120,15 +120,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Morph ${{ steps.meta.outputs.version }} (${{ steps.meta.outputs.channel }})
+          name: Morph ${{ steps.meta.outputs.version }}
           prerelease: ${{ steps.meta.outputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## Morph ${{ steps.meta.outputs.version }} · ${{ steps.meta.outputs.channel }}
+            ### Morph ${{ steps.meta.outputs.version }}
 
-            - **Doğrudan APK Kurulumu (Kalıcı İmzalı):** `Morph-${{ steps.meta.outputs.tag }}.apk`
-            - **Sorunsuz Üzerine Güncelleme:** Sabit Morph sertifikası ve artan yapı numarası ile sonraki tüm sürümler mevcut uygulamanın üzerine doğrudan kurulur.
-            - **Sürüm Kuralı:** Çift son numaralar (`1.1.2`, `1.1.4`…) kararlı sürüm, tek son numaralar (`1.1.3`, `1.1.5`…) beta sürümüdür.
+            - **Android Kurulum Paketi:** `Morph-${{ steps.meta.outputs.tag }}.apk`
+            - **Doğrulama Özeti:** `checksums.sha256`
           files: |
             release-assets/Morph-${{ steps.meta.outputs.tag }}.apk
             release-assets/checksums.sha256

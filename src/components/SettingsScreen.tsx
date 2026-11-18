@@ -24,7 +24,13 @@ import {
   Wifi,
 } from 'lucide-react';
 import {Lang, t} from '../data/i18n';
-import {DownloadEngineId, Prefs, VideoQualityPref} from '../data/models';
+import {
+  CornerStylePref,
+  DownloadEngineId,
+  Prefs,
+  UiScalePref,
+  VideoQualityPref,
+} from '../data/models';
 import {THEME_PRESETS} from '../data/themes';
 import {
   DIAGNOSTICS_UPDATED_EVENT,
@@ -251,6 +257,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const autoFallback = prefs.autoFallbackEngine !== false;
   const concurrentFragments = prefs.concurrentFragments ?? 4;
 
+  const uiScale: UiScalePref = prefs.uiScale ?? 'default';
+  const cornerStyle: CornerStylePref = prefs.cornerStyle ?? 'balanced';
+  const wheelSide: 'left' | 'right' = prefs.wheelSide ?? 'right';
+  const reducedMotion = Boolean(prefs.reducedMotion);
+  const hapticsEnabled = prefs.hapticsEnabled !== false;
+
   const liveNetLabel = !netStatus.connected
     ? t('LiveNetOffline', lang)
     : netStatus.connectionType === 'wifi'
@@ -297,23 +309,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     {id: 'about', label: t('SetCatAbout', lang), Icon: Smartphone},
   ];
 
+  const channelLabel =
+    getVersionChannel(APP_VERSION) === 'stable'
+      ? t('ReleaseStable', lang)
+      : t('ReleasePreview', lang);
+
   return (
     <div className="mx-auto w-full max-w-4xl px-4 pb-10 pt-5 sm:px-6 lg:pb-12 lg:pt-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-extrabold tracking-tight text-[var(--ink)] sm:text-3xl">
           {t('Settings', lang)}
         </h1>
-        <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
-          <span className="font-mono-num tabular-nums font-semibold text-[var(--ink)]">
-            Morph {APP_VERSION}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span>
-            {getVersionChannel(APP_VERSION) === 'stable'
-              ? t('ReleaseStable', lang)
-              : t('ReleasePreview', lang)}
-          </span>
-        </div>
       </div>
 
       {/* 4-Category Segmented Navigation Bar */}
@@ -333,7 +339,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               onClick={() => setCategory(id)}
               className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                 active
-                  ? 'bg-[var(--accent)] text-white shadow-sm'
+                  ? 'morph-accent-solid shadow-sm'
                   : 'text-[var(--muted)] hover:text-[var(--ink)]'
               }`}
             >
@@ -344,9 +350,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         })}
       </div>
 
-      {/* CATEGORY 1: APPEARANCE, LANGUAGE & RADIAL WHEELS */}
+      {/* CATEGORY 1: APPEARANCE, THEMES, INTERFACE CONTROLS & RADIAL WHEELS */}
       {category === 'appearance' && (
         <div className="mt-5 space-y-5">
+          {/* Themes & Dark/Light Mode */}
           <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
@@ -451,8 +458,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                       {selected && (
                         <span
-                          className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full text-white shadow"
-                          style={{backgroundColor: pal.accent}}
+                          className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full shadow"
+                          style={{
+                            backgroundColor: pal.accent,
+                            color: preset.id === 'monochrome' && isDark ? '#0D1320' : '#FFFFFF',
+                          }}
                         >
                           <Check className="h-2.5 w-2.5" />
                         </span>
@@ -471,6 +481,172 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </div>
           </section>
 
+          {/* Interface Scale, Corner Radius, Wheel Corner & Interaction Preferences */}
+          <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5">
+            <div className="flex items-center gap-2.5">
+              <SlidersHorizontal className="h-5 w-5 text-[var(--accent)]" />
+              <h2 className="text-base font-bold text-[var(--ink)]">
+                {t('UiInterfaceSection', lang)}
+              </h2>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {/* Text & UI Scale */}
+              <div>
+                <p className="mb-2 text-xs font-semibold text-[var(--muted)]">
+                  {t('UiScaleLabel', lang)}
+                </p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      ['compact', t('ScaleCompact', lang)],
+                      ['default', t('ScaleDefault', lang)],
+                      ['large', t('ScaleLarge', lang)],
+                    ] as const
+                  ).map(([val, label]) => {
+                    const active = uiScale === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => onChangePrefs((p) => ({...p, uiScale: val}))}
+                        className={`min-h-[40px] rounded-xl border px-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                          active
+                            ? 'border-[var(--accent)] bg-[var(--accent)]/18 text-[var(--ink)]'
+                            : 'border-[var(--line)] bg-[var(--inset)] text-[var(--muted)] hover:text-[var(--ink)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Corner Softness */}
+              <div>
+                <p className="mb-2 text-xs font-semibold text-[var(--muted)]">
+                  {t('CornerStyleLabel', lang)}
+                </p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(
+                    [
+                      ['sharp', t('CornerSharp', lang)],
+                      ['balanced', t('CornerBalanced', lang)],
+                      ['soft', t('CornerSoft', lang)],
+                    ] as const
+                  ).map(([val, label]) => {
+                    const active = cornerStyle === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => onChangePrefs((p) => ({...p, cornerStyle: val}))}
+                        className={`min-h-[40px] rounded-xl border px-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                          active
+                            ? 'border-[var(--accent)] bg-[var(--accent)]/18 text-[var(--ink)]'
+                            : 'border-[var(--line)] bg-[var(--inset)] text-[var(--muted)] hover:text-[var(--ink)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Quick Wheel Corner Side */}
+              <div>
+                <p className="mb-2 text-xs font-semibold text-[var(--muted)]">
+                  {t('WheelSideLabel', lang)}
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      ['left', t('WheelSideLeft', lang)],
+                      ['right', t('WheelSideRight', lang)],
+                    ] as const
+                  ).map(([val, label]) => {
+                    const active = wheelSide === val;
+                    return (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => onChangePrefs((p) => ({...p, wheelSide: val}))}
+                        className={`min-h-[40px] rounded-xl border px-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                          active
+                            ? 'border-[var(--accent)] bg-[var(--accent)]/18 text-[var(--ink)]'
+                            : 'border-[var(--line)] bg-[var(--inset)] text-[var(--muted)] hover:text-[var(--ink)]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Reduced Motion & Haptic Feedback Toggles */}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => onChangePrefs((p) => ({...p, reducedMotion: !p.reducedMotion}))}
+                className="flex min-h-[68px] items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--inset)] p-3.5 text-left transition-colors hover:border-[var(--accent)]/50"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[var(--ink)]">
+                    {t('ReducedMotionLabel', lang)}
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-[var(--muted)]">
+                    {t('ReducedMotionDesc', lang)}
+                  </p>
+                </div>
+                <span
+                  className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors ${
+                    reducedMotion
+                      ? 'bg-[var(--accent)]'
+                      : 'border border-[var(--line)] bg-[var(--surface)]'
+                  }`}
+                >
+                  <span
+                    className={`block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      reducedMotion ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onChangePrefs((p) => ({...p, hapticsEnabled: p.hapticsEnabled === false}))
+                }
+                className="flex min-h-[68px] items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--inset)] p-3.5 text-left transition-colors hover:border-[var(--accent)]/50"
+              >
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[var(--ink)]">{t('HapticsLabel', lang)}</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-[var(--muted)]">
+                    {t('HapticsDesc', lang)}
+                  </p>
+                </div>
+                <span
+                  className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors ${
+                    hapticsEnabled
+                      ? 'bg-[var(--accent)]'
+                      : 'border border-[var(--line)] bg-[var(--surface)]'
+                  }`}
+                >
+                  <span
+                    className={`block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                      hapticsEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </span>
+              </button>
+            </div>
+          </section>
+
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             {/* Language Card */}
             <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5">
@@ -486,7 +662,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     key={code}
                     type="button"
                     onClick={() => onChangePrefs((p) => ({...p, lang: code}))}
-                    className={`min-h-[44px] flex-1 rounded-full border text-xs font-semibold transition-colors whitespace-nowrap ${
+                    className={`min-h-[44px] flex-1 rounded-2xl border text-xs font-semibold transition-colors whitespace-nowrap ${
                       prefs.lang === code
                         ? 'border-[var(--accent)] bg-[var(--accent)]/20 text-[var(--ink)]'
                         : 'border-[var(--line)] bg-[var(--inset)] text-[var(--muted)] hover:text-[var(--ink)]'
@@ -522,7 +698,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <button
                   type="button"
                   onClick={onOpenWheelCustomize}
-                  className="morph-tonal-btn mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full px-4 text-xs font-semibold whitespace-nowrap transition-transform active:scale-[0.98]"
+                  className="morph-tonal-btn mt-4 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-2xl px-4 text-xs font-semibold whitespace-nowrap transition-transform active:scale-[0.98]"
                 >
                   <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
                   <span>{t('WheelCustomizeOpenBtn', lang)}</span>
@@ -572,7 +748,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </div>
                 <span
                   className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors ${
-                    wifiOnly ? 'bg-[var(--accent)]' : 'bg-[var(--surface)] border border-[var(--line)]'
+                    wifiOnly ? 'bg-[var(--accent)]' : 'border border-[var(--line)] bg-[var(--surface)]'
                   }`}
                 >
                   <span
@@ -598,7 +774,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </div>
                 <span
                   className={`h-6 w-11 shrink-0 rounded-full p-0.5 transition-colors ${
-                    autoFallback ? 'bg-[var(--accent)]' : 'bg-[var(--surface)] border border-[var(--line)]'
+                    autoFallback ? 'bg-[var(--accent)]' : 'border border-[var(--line)] bg-[var(--surface)]'
                   }`}
                 >
                   <span
@@ -792,7 +968,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       </div>
                       <p className="mt-1.5 text-xs leading-relaxed text-[var(--muted)]">{desc}</p>
 
-                      {/* Inline Cobalt URL & API Key directly inside the Cobalt card when selected or configured */}
                       {id === 'cobalt' && (isSelected || Boolean((prefs.cobaltUrl || '').trim())) && (
                         <div className="mt-3 space-y-2.5 border-t border-[var(--line)]/80 pt-3">
                           <div>
@@ -829,7 +1004,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                         onClick={() => onChangePrefs((p) => ({...p, downloadEngine: id}))}
                         className={`flex min-h-[38px] items-center justify-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                           isSelected
-                            ? 'border-[var(--accent)] bg-[var(--accent)] text-white'
+                            ? 'morph-accent-solid border-[var(--accent)]'
                             : 'border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] hover:border-[var(--accent)]'
                         }`}
                       >
@@ -1082,9 +1257,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       )}
 
-      {/* CATEGORY 4: UPDATES & APK */}
+      {/* CATEGORY 4: UPDATES (Equal-Height h-12 Boxes, Single Clean Version Row, Developer Telegram) */}
       {category === 'about' && (
-        <div className="mt-5">
+        <div className="mt-5 space-y-4">
           <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--inset)] text-[var(--accent)]">
@@ -1098,12 +1273,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
             </div>
 
-            <div className="mt-4 space-y-3">
+            {/* Uniform 48px (h-12) rows with matching rounded-2xl geometry */}
+            <div className="mt-4 space-y-2.5">
               {updateInfo?.hasUpdate ? (
                 <button
                   type="button"
                   onClick={onApplyUpdate}
-                  className="morph-accent-btn flex min-h-[46px] w-full min-w-0 items-center justify-center gap-2 rounded-full px-4 py-2 text-center text-xs font-semibold leading-tight shadow transition-transform active:scale-[0.98] whitespace-nowrap"
+                  className="morph-accent-btn flex h-12 w-full min-w-0 items-center justify-center gap-2 rounded-2xl px-4 text-xs font-semibold shadow transition-transform active:scale-[0.98] whitespace-nowrap"
                 >
                   <Download className="h-4 w-4 shrink-0" />
                   <span>{t('DownloadUpdate', lang)}</span>
@@ -1113,29 +1289,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   type="button"
                   onClick={onCheckUpdate}
                   disabled={checkingUpdate}
-                  className="morph-tonal-btn flex min-h-[46px] w-full min-w-0 items-center justify-center gap-2 rounded-full px-4 py-2 text-center text-xs font-semibold leading-tight transition-all active:scale-[0.98] disabled:opacity-70 whitespace-nowrap"
+                  className="morph-tonal-btn flex h-12 w-full min-w-0 items-center justify-center gap-2 rounded-2xl px-4 text-xs font-semibold transition-all active:scale-[0.98] disabled:opacity-70 whitespace-nowrap"
                 >
                   <RefreshCw className={`h-4 w-4 shrink-0 text-[var(--accent)] ${checkingUpdate ? 'animate-spin' : ''}`} />
                   <span>{checkingUpdate ? t('CheckingUpdates', lang) : t('CheckUpdates', lang)}</span>
                 </button>
               )}
 
-              {updateInfo && (
-                <div className="rounded-2xl border border-[var(--line)] bg-[var(--inset)] px-4 py-3 text-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--ink)]">
-                      <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
-                      {t('LatestCommit', lang)}
-                    </span>
-                    <span className="text-xs font-semibold text-[var(--accent)]">
-                      {updateInfo.hasUpdate ? t('UpdateAvailable', lang) : t('UpToDate', lang)}
-                    </span>
-                  </div>
-                  {updateInfo.error && (
-                    <p className="mt-1 text-[11px] text-[var(--accent)]">{updateInfo.error}</p>
-                  )}
+              {/* Single clean version & status row (exact same h-12 height) */}
+              <div className="flex h-12 w-full items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--inset)] px-4 text-xs">
+                <div className="flex min-w-0 items-center gap-2 whitespace-nowrap">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
+                  <span className="font-mono-num tabular-nums font-bold text-[var(--ink)]">
+                    Morph {APP_VERSION}
+                  </span>
+                  <span aria-hidden="true" className="text-[var(--muted)]">
+                    ·
+                  </span>
+                  <span className="text-[var(--muted)]">{channelLabel}</span>
                 </div>
-              )}
+
+                <span className="truncate text-xs font-semibold text-[var(--accent)]">
+                  {updateInfo?.error
+                    ? updateInfo.error
+                    : updateInfo?.hasUpdate
+                      ? t('UpdateAvailable', lang)
+                      : t('UpToDate', lang)}
+                </span>
+              </div>
 
               {!isNativeApp() && <PWAInstallButton lang={lang} variant="card" />}
 
@@ -1144,7 +1325,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   href={updateInfo?.apkDownloadUrl ?? `https://github.com/${GITHUB_REPO}/releases`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] min-w-0 items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--inset)] px-3 py-2 text-center text-xs font-semibold leading-none text-[var(--ink)] whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  className="flex h-12 min-w-0 items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--inset)] px-3 text-xs font-semibold text-[var(--ink)] whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                 >
                   <Download className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
                   <span className="truncate">{t('DownloadApk', lang)}</span>
@@ -1153,32 +1334,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   href={updateInfo?.repoUrl ?? `https://github.com/${GITHUB_REPO}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex min-h-[44px] min-w-0 items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--inset)] px-3 py-2 text-center text-xs font-semibold leading-none text-[var(--ink)] whitespace-nowrap transition-colors hover:border-[var(--accent)]"
+                  className="flex h-12 min-w-0 items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--inset)] px-3 text-xs font-semibold text-[var(--ink)] whitespace-nowrap transition-colors hover:border-[var(--accent)]"
                 >
                   <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[var(--accent)]" />
                   <span className="truncate">{t('OpenGithubRepo', lang)}</span>
                 </a>
-              </div>
-
-              <p className="pt-1 text-xs leading-relaxed text-[var(--muted)]">
-                {t('ApkSignatureReady', lang)}
-              </p>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)]/70 pt-3">
-              <span className="text-[11px] text-[var(--muted)]">{t('ApkBuildHint', lang)}</span>
-              <div className="ml-auto flex items-center gap-2 text-[11px]">
-                <span className="font-mono-num tabular-nums font-bold text-[var(--accent)]">
-                  Morph {APP_VERSION}
-                </span>
-                <span aria-hidden="true" className="text-[var(--muted)]">
-                  ·
-                </span>
-                <span className="font-semibold text-[var(--ink)]">
-                  {getVersionChannel(APP_VERSION) === 'stable'
-                    ? t('ReleaseStable', lang)
-                    : t('ReleasePreview', lang)}
-                </span>
               </div>
             </div>
           </section>
@@ -1188,7 +1348,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             href="https://t.me/ucanbizon"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 flex min-h-[68px] w-full items-center justify-between gap-3 rounded-3xl border border-[var(--line)] bg-[var(--surface)] px-5 py-4 transition-colors hover:border-[#2AABEE]"
+            className="flex min-h-[68px] w-full items-center justify-between gap-3 rounded-3xl border border-[var(--line)] bg-[var(--surface)] px-5 py-4 transition-colors hover:border-[#2AABEE]"
           >
             <div className="flex min-w-0 items-center gap-3.5">
               <div

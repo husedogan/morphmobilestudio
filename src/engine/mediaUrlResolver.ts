@@ -292,7 +292,7 @@ export async function resolvePlatformMedia(
     try {
       const res = await http.fetchText(`https://api.fxtwitter.com/${tw.user}/status/${tw.id}`, {
         Accept: 'application/json',
-        'User-Agent': 'Morph/1.1.9',
+        'User-Agent': 'Morph/1.1.10',
       });
       if (res.status >= 200 && res.status < 300) {
         const json = JSON.parse(res.text);
