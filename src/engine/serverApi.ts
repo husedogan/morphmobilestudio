@@ -1,4 +1,4 @@
-import {ExportItem, PickedFile, mimeFromExt} from '../data/models';
+import {ExportItem, PickedFile, createId, mimeFromExt} from '../data/models';
 import {isNativeApp} from './nativeBridge';
 
 export interface ServerHealth {
@@ -136,7 +136,7 @@ export async function downloadServerOutput(
   const ext = name.includes('.') ? name.split('.').pop()! : '';
   const mime = blob.type || mimeFromExt(ext);
   return {
-    id: crypto.randomUUID(),
+    id: createId(),
     name,
     mime,
     size: blob.size,

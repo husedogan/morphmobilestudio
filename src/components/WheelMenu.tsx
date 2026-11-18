@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {LucideIcon} from 'lucide-react';
-import {Lang} from '../data/i18n';
+import {LucideIcon, Settings} from 'lucide-react';
+import {Lang, t} from '../data/i18n';
 
 export interface WheelActionItem {
   id: string;
@@ -15,14 +15,90 @@ interface WheelMenuProps {
   lang: Lang;
   onDismiss: () => void;
   onSelect: (id: string) => void;
+  onOpenCustomize?: () => void;
 }
 
-const SIZE = 340;
-const CX = SIZE / 2;
-const CY = SIZE / 2;
-const OUTER_R = 164;
-const INNER_R = 56;
-const LABEL_R = 112;
+const CENTER_HOLD_MS = 3000;
+const CENTER_TAP_MAX_MS = 320;
+
+interface WheelGeometry {
+  size: number;
+  cx: number;
+  cy: number;
+  centerR: number;
+  dualRing: boolean;
+  outerCount: number;
+  innerCount: number;
+  outerRingIn: number;
+  outerRingOut: number;
+  outerLabelR: number;
+  innerRingIn: number;
+  innerRingOut: number;
+  innerLabelR: number;
+  containerWidthClass: string;
+}
+
+function getWheelGeometry(count: number): WheelGeometry {
+  if (count > 10) {
+    const size = 388;
+    const outerCount = Math.ceil(count * 0.58);
+    const innerCount = count - outerCount;
+    return {
+      size,
+      cx: size / 2,
+      cy: size / 2,
+      centerR: 50,
+      dualRing: true,
+      outerCount,
+      innerCount,
+      innerRingIn: 52,
+      innerRingOut: 118,
+      innerLabelR: 85,
+      outerRingIn: 120,
+      outerRingOut: 188,
+      outerLabelR: 154,
+      containerWidthClass: 'w-[min(388px,95vw)]',
+    };
+  }
+
+  if (count >= 8) {
+    const size = 368;
+    return {
+      size,
+      cx: size / 2,
+      cy: size / 2,
+      centerR: 52,
+      dualRing: false,
+      outerCount: count,
+      innerCount: 0,
+      innerRingIn: 0,
+      innerRingOut: 0,
+      innerLabelR: 0,
+      outerRingIn: 54,
+      outerRingOut: 178,
+      outerLabelR: 118,
+      containerWidthClass: 'w-[min(368px,94vw)]',
+    };
+  }
+
+  const size = 340;
+  return {
+    size,
+    cx: size / 2,
+    cy: size / 2,
+    centerR: 56,
+    dualRing: false,
+    outerCount: count,
+    innerCount: 0,
+    innerRingIn: 0,
+    innerRingOut: 0,
+    innerLabelR: 0,
+    outerRingIn: 56,
+    outerRingOut: 164,
+    outerLabelR: 112,
+    containerWidthClass: 'w-[min(340px,92vw)]',
+  };
+}
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   const rad = (angleDeg * Math.PI) / 180;
@@ -32,61 +108,195 @@ function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
   };
 }
 
-function describeSlice(startDeg: number, endDeg: number): string {
-  const outerStart = polarToCartesian(CX, CY, OUTER_R, startDeg);
-  const outerEnd = polarToCartesian(CX, CY, OUTER_R, endDeg);
-  const innerEnd = polarToCartesian(CX, CY, INNER_R, endDeg);
-  const innerStart = polarToCartesian(CX, CY, INNER_R, startDeg);
+function describeRingSlice(
+  cx: number,
+  cy: number,
+  innerR: number,
+  outerR: number,
+  startDeg: number,
+  endDeg: number
+): string {
+  const outerStart = polarToCartesian(cx, cy, outerR, startDeg);
+  const outerEnd = polarToCartesian(cx, cy, outerR, endDeg);
+  const innerEnd = polarToCartesian(cx, cy, innerR, endDeg);
+  const innerStart = polarToCartesian(cx, cy, innerR, startDeg);
   const largeArc = endDeg - startDeg > 180 ? 1 : 0;
 
   return [
     `M ${outerStart.x} ${outerStart.y}`,
-    `A ${OUTER_R} ${OUTER_R} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
     `L ${innerEnd.x} ${innerEnd.y}`,
-    `A ${INNER_R} ${INNER_R} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y}`,
     'Z',
   ].join(' ');
 }
 
-function hitSliceIndex(clientX: number, clientY: number, rect: DOMRect, count: number): number {
-  if (count <= 0) return -1;
+function angleToRingIndex(angleDeg: number, ringCount: number): number {
+  if (ringCount <= 0) return -1;
+  const step = 360 / ringCount;
+  const start = -90 - step / 2;
+  const delta = (((angleDeg - start) % 360) + 360) % 360;
+  return Math.min(ringCount - 1, Math.max(0, Math.floor(delta / step)));
+}
+
+function hitWheelTarget(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+  geo: WheelGeometry
+): {zone: 'center' | 'slice' | 'outside'; sliceIndex: number} {
   const x = clientX - rect.left;
   const y = clientY - rect.top;
   const dx = x - rect.width / 2;
   const dy = y - rect.height / 2;
   const dist = Math.hypot(dx, dy);
-  const scale = rect.width / SIZE;
-  if (dist < INNER_R * scale || dist > OUTER_R * scale) return -1;
+  const scale = rect.width / geo.size;
+
+  if (dist <= geo.centerR * scale) {
+    return {zone: 'center', sliceIndex: -1};
+  }
+
   const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-  const step = 360 / count;
-  const start = -90 - step / 2;
-  const delta = (((angle - start) % 360) + 360) % 360;
-  return Math.min(count - 1, Math.max(0, Math.floor(delta / step)));
+
+  if (geo.dualRing) {
+    if (dist >= geo.innerRingIn * scale && dist <= geo.innerRingOut * scale) {
+      const idx = angleToRingIndex(angle, geo.innerCount);
+      return idx >= 0 ? {zone: 'slice', sliceIndex: geo.outerCount + idx} : {zone: 'outside', sliceIndex: -1};
+    }
+    if (dist > geo.innerRingOut * scale && dist <= geo.outerRingOut * scale) {
+      const idx = angleToRingIndex(angle, geo.outerCount);
+      return idx >= 0 ? {zone: 'slice', sliceIndex: idx} : {zone: 'outside', sliceIndex: -1};
+    }
+    return {zone: 'outside', sliceIndex: -1};
+  }
+
+  if (dist >= geo.outerRingIn * scale && dist <= geo.outerRingOut * scale) {
+    const idx = angleToRingIndex(angle, geo.outerCount);
+    return idx >= 0 ? {zone: 'slice', sliceIndex: idx} : {zone: 'outside', sliceIndex: -1};
+  }
+
+  return {zone: 'outside', sliceIndex: -1};
 }
 
 export const WheelMenu: React.FC<WheelMenuProps> = ({
   open,
   title,
   actions,
+  lang,
   onDismiss,
   onSelect,
+  onOpenCustomize,
 }) => {
   const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const [holdProgress, setHoldProgress] = useState<number>(0);
+  const [gearSpinDeg, setGearSpinDeg] = useState<number>(0);
   const wheelRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<number>(-1);
+  const holdRafRef = useRef<number | null>(null);
+  const openTimerRef = useRef<number | null>(null);
+  const centerHoldStateRef = useRef<{
+    active: boolean;
+    startAt: number;
+    triggered: boolean;
+    pointerId: number;
+  }>({
+    active: false,
+    startAt: 0,
+    triggered: false,
+    pointerId: -1,
+  });
+
+  const stopCenterHoldLoop = useCallback((resetVisual = true) => {
+    if (holdRafRef.current !== null) {
+      window.cancelAnimationFrame(holdRafRef.current);
+      holdRafRef.current = null;
+    }
+    centerHoldStateRef.current.active = false;
+    if (resetVisual) {
+      setHoldProgress(0);
+      setGearSpinDeg(0);
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) {
       setActiveIndex(-1);
       activeRef.current = -1;
+      stopCenterHoldLoop(true);
+      centerHoldStateRef.current.triggered = false;
+      if (openTimerRef.current !== null) {
+        window.clearTimeout(openTimerRef.current);
+        openTimerRef.current = null;
+      }
     }
-  }, [open]);
+  }, [open, stopCenterHoldLoop]);
+
+  useEffect(() => {
+    return () => {
+      stopCenterHoldLoop(false);
+      if (openTimerRef.current !== null) {
+        window.clearTimeout(openTimerRef.current);
+      }
+    };
+  }, [stopCenterHoldLoop]);
+
+  const count = actions.length;
+  const geo = getWheelGeometry(Math.max(1, count));
+
+  const startCenterHold = useCallback(
+    (pointerId: number) => {
+      stopCenterHoldLoop(false);
+      const startAt = performance.now();
+      let lastNow = startAt;
+      let spin = 0;
+      centerHoldStateRef.current = {
+        active: true,
+        startAt,
+        triggered: false,
+        pointerId,
+      };
+      setHoldProgress(0.01);
+
+      const tick = (now: number) => {
+        if (!centerHoldStateRef.current.active) return;
+        const dtSec = Math.min(0.05, Math.max(0.001, (now - lastNow) / 1000));
+        lastNow = now;
+        const elapsed = now - startAt;
+        const p = Math.min(1, elapsed / CENTER_HOLD_MS);
+
+        const speedDegPerSec = 50 + Math.pow(p, 1.8) * 420;
+        spin = (spin + speedDegPerSec * dtSec) % 360;
+        setHoldProgress(p);
+        setGearSpinDeg(spin);
+
+        if (p >= 1) {
+          centerHoldStateRef.current.active = false;
+          centerHoldStateRef.current.triggered = true;
+          holdRafRef.current = null;
+          if ('vibrate' in navigator) {
+            navigator.vibrate([20, 35, 20]);
+          }
+          openTimerRef.current = window.setTimeout(() => {
+            openTimerRef.current = null;
+            onOpenCustomize?.();
+          }, 160);
+          return;
+        }
+
+        holdRafRef.current = window.requestAnimationFrame(tick);
+      };
+
+      holdRafRef.current = window.requestAnimationFrame(tick);
+    },
+    [onOpenCustomize, stopCenterHoldLoop]
+  );
 
   const updatePointer = useCallback(
     (clientX: number, clientY: number) => {
       const el = wheelRef.current;
-      if (!el) return -1;
-      const idx = hitSliceIndex(clientX, clientY, el.getBoundingClientRect(), actions.length);
+      if (!el) return {zone: 'outside' as const, sliceIndex: -1};
+      const hit = hitWheelTarget(clientX, clientY, el.getBoundingClientRect(), geo);
+      const idx = hit.zone === 'slice' ? hit.sliceIndex : -1;
       if (idx !== activeRef.current) {
         activeRef.current = idx;
         setActiveIndex(idx);
@@ -94,121 +304,270 @@ export const WheelMenu: React.FC<WheelMenuProps> = ({
           navigator.vibrate(8);
         }
       }
-      return idx;
+      return hit;
     },
-    [actions.length]
+    [geo]
   );
 
-  if (!open || actions.length === 0) return null;
+  if (!open || count === 0) return null;
 
-  const count = actions.length;
-  const step = 360 / count;
-  const startBase = -90 - step / 2;
-  const labelWidthPct = count <= 4 ? 25 : count <= 6 ? 20 : 16.5;
-  const labelTextClass = count >= 7 ? 'text-[9px]' : 'text-[10px]';
+  const progressCircumference = 2 * Math.PI * (geo.centerR - 3);
+  const progressOffset = progressCircumference * (1 - holdProgress);
+  const gearOpacity = Math.min(1, Math.max(0, (holdProgress - 0.22) / 0.5));
+  const markOpacity = Math.max(0, 1 - Math.max(0, (holdProgress - 0.28) / 0.45));
+
+  const renderRingSlicesAndLabels = (
+    ringItems: WheelActionItem[],
+    indexOffset: number,
+    ringIn: number,
+    ringOut: number,
+    labelR: number,
+    isInnerRing: boolean
+  ) => {
+    const rCount = ringItems.length;
+    if (rCount === 0) return {paths: null, labels: null};
+    const step = 360 / rCount;
+    const startBase = -90 - step / 2;
+    const gapDeg = rCount >= 9 ? 0.8 : 1.1;
+
+    const labelWidthPct = geo.dualRing
+      ? isInnerRing
+        ? rCount <= 5
+          ? 16.5
+          : 14
+        : rCount <= 8
+          ? 17
+          : 14.5
+      : rCount <= 4
+        ? 25
+        : rCount <= 6
+          ? 20
+          : rCount <= 8
+            ? 16.5
+            : 14;
+
+    const iconSizeClass = geo.dualRing || rCount >= 8 ? 'h-[14px] w-[14px]' : 'h-[17px] w-[17px]';
+    const labelTextClass =
+      geo.dualRing || rCount >= 9 ? 'text-[8.5px]' : rCount >= 7 ? 'text-[9px]' : 'text-[10px]';
+
+    const paths = ringItems.map((action, localIdx) => {
+      const globalIdx = indexOffset + localIdx;
+      const sAngle = startBase + localIdx * step + gapDeg;
+      const eAngle = startBase + (localIdx + 1) * step - gapDeg;
+      const isActive = globalIdx === activeIndex;
+      return (
+        <path
+          key={action.id}
+          d={describeRingSlice(geo.cx, geo.cy, ringIn, ringOut, sAngle, eAngle)}
+          fill={isActive ? 'var(--accent)' : 'var(--surface)'}
+          fillOpacity={isActive ? 0.96 : 0.97}
+          stroke="var(--line)"
+          strokeWidth="1.25"
+          className="transition-colors duration-100"
+        />
+      );
+    });
+
+    const labels = ringItems.map((action, localIdx) => {
+      const globalIdx = indexOffset + localIdx;
+      const midAngle = -90 + localIdx * step;
+      const pos = polarToCartesian(geo.cx, geo.cy, labelR, midAngle);
+      const Icon = action.icon;
+      const isActive = globalIdx === activeIndex;
+      return (
+        <div
+          key={action.id}
+          className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center overflow-hidden px-0.5 text-center"
+          style={{
+            left: `${(pos.x / geo.size) * 100}%`,
+            top: `${(pos.y / geo.size) * 100}%`,
+            width: `${labelWidthPct}%`,
+          }}
+        >
+          <Icon
+            className={`${iconSizeClass} shrink-0 transition-colors duration-100`}
+            style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
+          />
+          <span
+            className={`mt-0.5 line-clamp-2 w-full overflow-hidden text-ellipsis break-words font-semibold leading-[1.08] tracking-tight ${labelTextClass}`}
+            style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
+          >
+            {action.label}
+          </span>
+        </div>
+      );
+    });
+
+    return {paths, labels};
+  };
+
+  const outerSliceGroup = renderRingSlicesAndLabels(
+    geo.dualRing ? actions.slice(0, geo.outerCount) : actions,
+    0,
+    geo.outerRingIn,
+    geo.outerRingOut,
+    geo.outerLabelR,
+    false
+  );
+
+  const innerSliceGroup = geo.dualRing
+    ? renderRingSlicesAndLabels(
+        actions.slice(geo.outerCount),
+        geo.outerCount,
+        geo.innerRingIn,
+        geo.innerRingOut,
+        geo.innerLabelR,
+        true
+      )
+    : {paths: null, labels: null};
 
   return (
     <div
-      className="no-touch-callout fixed inset-0 z-50 flex flex-col items-center justify-end gap-4 bg-black/60 pb-12 backdrop-blur-sm sm:justify-center sm:pb-0"
+      className="no-touch-callout fixed inset-0 z-50 flex flex-col items-center justify-end gap-3.5 bg-black/60 pb-10 backdrop-blur-sm sm:justify-center sm:pb-0"
       onClick={onDismiss}
       onContextMenu={(e) => e.preventDefault()}
       role="dialog"
       aria-modal="true"
     >
-      {title && (
+      {holdProgress > 0.08 ? (
         <div
-          className="max-w-[90vw] truncate rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-[var(--ink)] shadow-lg"
+          className="max-w-[90vw] truncate rounded-full border border-[var(--accent)]/60 bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-semibold text-[var(--ink)] shadow-lg whitespace-nowrap"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {t('HoldingCenterGearHint', lang)} · {Math.max(0, (3 - holdProgress * 3)).toFixed(1)}s
+        </div>
+      ) : title ? (
+        <div
+          className="max-w-[90vw] truncate rounded-full border border-[var(--line)] bg-[var(--surface)]/95 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-[var(--ink)] shadow-lg whitespace-nowrap"
           onClick={(e) => e.stopPropagation()}
         >
           {title}
         </div>
-      )}
+      ) : null}
 
-      {/* Responsive square wheel container with percentage-aligned labels */}
+      {/* Responsive square wheel container with single or dual concentric rings */}
       <div
         ref={wheelRef}
-        className="no-touch-callout relative aspect-square w-[min(340px,92vw)] select-none touch-none"
+        className={`no-touch-callout relative aspect-square ${geo.containerWidthClass} select-none touch-none`}
         onClick={(e) => e.stopPropagation()}
         onContextMenu={(e) => e.preventDefault()}
         onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          updatePointer(e.clientX, e.clientY);
+          if (e.pointerType === 'touch') {
+            e.preventDefault();
+          }
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // Ignore capture errors
+          }
+          const hit = updatePointer(e.clientX, e.clientY);
+          if (hit.zone === 'center' && onOpenCustomize) {
+            startCenterHold(e.pointerId);
+          } else {
+            stopCenterHoldLoop(true);
+          }
         }}
         onPointerMove={(e) => {
           if (e.buttons > 0 || e.pointerType === 'touch') {
-            updatePointer(e.clientX, e.clientY);
+            const hit = updatePointer(e.clientX, e.clientY);
+            if (centerHoldStateRef.current.active && hit.zone !== 'center') {
+              stopCenterHoldLoop(true);
+            }
           }
         }}
         onPointerUp={(e) => {
-          const idx = updatePointer(e.clientX, e.clientY);
-          if (idx >= 0 && idx < count) {
-            if ('vibrate' in navigator) navigator.vibrate(14);
-            onSelect(actions[idx].id);
-          } else {
-            onDismiss();
+          if (centerHoldStateRef.current.triggered) {
+            centerHoldStateRef.current.triggered = false;
+            return;
           }
+          const wasHoldingCenter = centerHoldStateRef.current.active;
+          const heldMs = wasHoldingCenter ? performance.now() - centerHoldStateRef.current.startAt : 0;
+          stopCenterHoldLoop(true);
+
+          const hit = updatePointer(e.clientX, e.clientY);
+          if (hit.zone === 'slice' && hit.sliceIndex >= 0 && hit.sliceIndex < count) {
+            if ('vibrate' in navigator) navigator.vibrate(14);
+            onSelect(actions[hit.sliceIndex].id);
+            return;
+          }
+
+          if (wasHoldingCenter && heldMs >= CENTER_TAP_MAX_MS) {
+            // Released center m hold before 3 seconds — keep wheel open so user can retry cleanly
+            return;
+          }
+
+          onDismiss();
         }}
         onPointerCancel={() => {
+          stopCenterHoldLoop(true);
           setActiveIndex(-1);
           activeRef.current = -1;
         }}
       >
-        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-full w-full drop-shadow-2xl">
-          {actions.map((action, index) => {
-            const sAngle = startBase + index * step + 1.1;
-            const eAngle = startBase + (index + 1) * step - 1.1;
-            const isActive = index === activeIndex;
-            return (
-              <path
-                key={action.id}
-                d={describeSlice(sAngle, eAngle)}
-                fill={isActive ? 'var(--accent)' : 'var(--surface)'}
-                fillOpacity={isActive ? 0.95 : 0.97}
-                stroke="var(--line)"
-                strokeWidth="1.25"
-                className="transition-colors duration-100"
-              />
-            );
-          })}
-          <circle cx={CX} cy={CY} r={INNER_R} fill="var(--paper)" stroke="var(--line)" strokeWidth="1.25" />
+        <svg viewBox={`0 0 ${geo.size} ${geo.size}`} className="h-full w-full drop-shadow-2xl">
+          {outerSliceGroup.paths}
+          {innerSliceGroup.paths}
+          <circle
+            cx={geo.cx}
+            cy={geo.cy}
+            r={geo.centerR}
+            fill="var(--paper)"
+            stroke={holdProgress > 0.05 ? 'var(--accent)' : 'var(--line)'}
+            strokeWidth={holdProgress > 0.05 ? '1.75' : '1.25'}
+          />
+          {holdProgress > 0.02 && (
+            <circle
+              cx={geo.cx}
+              cy={geo.cy}
+              r={geo.centerR - 3}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="3.5"
+              strokeLinecap="round"
+              strokeDasharray={progressCircumference}
+              strokeDashoffset={progressOffset}
+              transform={`rotate(-90 ${geo.cx} ${geo.cy})`}
+            />
+          )}
         </svg>
 
         {/* Non-interactive overflow-safe radial labels */}
-        {actions.map((action, index) => {
-          const midAngle = -90 + index * step;
-          const pos = polarToCartesian(CX, CY, LABEL_R, midAngle);
-          const Icon = action.icon;
-          const isActive = index === activeIndex;
-          return (
-            <div
-              key={action.id}
-              className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center overflow-hidden px-0.5 text-center"
-              style={{
-                left: `${(pos.x / SIZE) * 100}%`,
-                top: `${(pos.y / SIZE) * 100}%`,
-                width: `${labelWidthPct}%`,
-              }}
-            >
-              <Icon
-                className="h-[17px] w-[17px] shrink-0 transition-colors duration-100"
-                style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
-              />
-              <span
-                className={`mt-1 line-clamp-2 w-full overflow-hidden text-ellipsis break-words font-semibold leading-[1.1] tracking-tight ${labelTextClass}`}
-                style={{color: isActive ? '#FFFFFF' : 'var(--ink)'}}
-              >
-                {action.label}
-              </span>
-            </div>
-          );
-        })}
+        {outerSliceGroup.labels}
+        {innerSliceGroup.labels}
 
-        {/* Center brand mark */}
+        {/* Center m mark -> 3s hold morphs into spinning Gear */}
         <div
           className="pointer-events-none absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center justify-center"
-          style={{width: `${((INNER_R * 1.65) / SIZE) * 100}%`, height: `${((INNER_R * 1.65) / SIZE) * 100}%`}}
+          style={{
+            width: `${((geo.centerR * 1.65) / geo.size) * 100}%`,
+            height: `${((geo.centerR * 1.65) / geo.size) * 100}%`,
+          }}
         >
-          <img src="/morph-mark.png" alt="morph" draggable={false} className="h-10 w-auto object-contain" />
+          {markOpacity > 0.01 && (
+            <img
+              src="/morph-mark.png"
+              alt="morph"
+              draggable={false}
+              className="absolute h-9 w-auto object-contain"
+              style={{
+                opacity: markOpacity,
+                transform: `scale(${(1 - holdProgress * 0.25).toFixed(3)}) rotate(${(
+                  holdProgress * 90
+                ).toFixed(1)}deg)`,
+              }}
+            />
+          )}
+          {gearOpacity > 0.01 && (
+            <Settings
+              className="absolute h-8 w-8 text-[var(--accent)]"
+              style={{
+                opacity: gearOpacity,
+                transform: `scale(${(0.72 + gearOpacity * 0.36).toFixed(3)}) rotate(${gearSpinDeg.toFixed(
+                  1
+                )}deg)`,
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
@@ -273,10 +632,9 @@ function createAshBurst(cx: number, cy: number, startId: number): AshFlake[] {
   return flakes;
 }
 
-// Minimum swipe distance (within first 550ms) to drag the FAB to the opposite corner;
-// stationary press-and-hold stays in-place and triggers the spin -> fire gear -> ash sequence.
-const DRAG_DISTANCE_PX = 38;
-const DRAG_WINDOW_MS = 550;
+// Minimum movement distance to start dragging the FAB to left/right corners at ANY point
+// during a press-and-hold while keeping the spin -> fire gear -> ash sequence running live.
+const DRAG_DISTANCE_PX = 18;
 const TAP_MAX_MS = 320;
 
 export const WheelFab: React.FC<{
@@ -342,7 +700,7 @@ export const WheelFab: React.FC<{
     setPreviewSide(side);
   }, [side]);
 
-  const isHeating = (isPressing || isHovering) && !isDragging;
+  const isHeating = isPressing || isHovering;
 
   useEffect(() => {
     heatingActiveRef.current = isHeating && phaseRef.current === 'idle';
@@ -445,6 +803,10 @@ export const WheelFab: React.FC<{
             const cx = rect ? rect.left + rect.width / 2 : window.innerWidth - 48;
             const cy = rect ? rect.top + rect.height / 2 : window.innerHeight - 48;
             if ('vibrate' in navigator) navigator.vibrate([22, 35, 16]);
+            if (rect) {
+              const dropSide: 'left' | 'right' = cx < window.innerWidth / 2 ? 'left' : 'right';
+              onChangeSide?.(dropSide);
+            }
             fx.elapsed = 0;
             fx.activeEmbers = [];
             fx.activeAsh = createAshBurst(cx, cy, fx.particleId);
@@ -452,6 +814,9 @@ export const WheelFab: React.FC<{
             setEmbers([]);
             setAshFlakes([...fx.activeAsh]);
             setAshProgress(0);
+            setIsDragging(false);
+            setIsSnapping(false);
+            setDragPos(null);
             setIsHovering(false);
             setIsPressing(false);
             heatingActiveRef.current = false;
@@ -573,21 +938,16 @@ export const WheelFab: React.FC<{
 
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== pointerId) return;
+      if (phaseRef.current !== 'idle') return;
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       const dist = Math.hypot(dx, dy);
-      const heldFor = performance.now() - downAt;
 
-      // Only enter corner-drag mode on a quick, deliberate swipe away from the button;
-      // holding in place keeps spinning/heating without showing corner drop zones.
-      if (!dragged && heldFor < DRAG_WINDOW_MS && dist > DRAG_DISTANCE_PX) {
+      // Enter corner-drag mode whenever the pointer moves beyond threshold — at ANY point
+      // during the spin/heat/burn hold — without interrupting acceleration or flames!
+      if (!dragged && dist > DRAG_DISTANCE_PX) {
         dragged = true;
-        setIsPressing(false);
-        setIsHovering(false);
         setIsDragging(true);
-        hoverMsRef.current = 0;
-        setHeat(0);
-        setBurnLevel(0);
         onHoverChange?.(false);
       }
       if (!dragged) return;
@@ -612,6 +972,13 @@ export const WheelFab: React.FC<{
         window.setTimeout(() => {
           suppressClickRef.current = false;
         }, 160);
+
+        if (phaseRef.current !== 'idle') {
+          setIsDragging(false);
+          setIsSnapping(false);
+          setDragPos(null);
+          return;
+        }
 
         const targetSide: 'left' | 'right' =
           latestX + btnW / 2 < window.innerWidth / 2 ? 'left' : 'right';
@@ -856,7 +1223,7 @@ export const WheelFab: React.FC<{
         className={`no-touch-callout fixed z-30 select-none ${dragPos ? '' : cornerClass}`}
       >
         {!isDragging && !isPressing && heat < 0.08 && phase === 'idle' && cloud}
-        {heat > 0.32 && !isDragging && phase === 'idle' && flameFade > 0.05 && (
+        {heat > 0.32 && phase === 'idle' && flameFade > 0.05 && (
           <span
             aria-hidden="true"
             className={`pointer-events-none absolute -inset-3.5 rounded-full blur-md transition-opacity duration-200 ${

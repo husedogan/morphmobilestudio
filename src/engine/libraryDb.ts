@@ -1,4 +1,4 @@
-import {ExportItem, Prefs} from '../data/models';
+import {DEFAULT_WHEEL_CONFIG, ExportItem, Prefs} from '../data/models';
 
 const PREFS_KEY = 'morph_studio_prefs_v1';
 const DB_NAME = 'morph_studio_db';
@@ -12,13 +12,32 @@ export const DEFAULT_PREFS: Prefs = {
   serverUrl: '',
   serverToken: '',
   wheelSide: 'right',
+  lastEngineAction: 'update',
+  lastEngineSegment: null,
+  downloadEngine: 'builtin',
+  downloadWifiOnly: false,
+  cellularLimitMb: 150,
+  preferredVideoQuality: '720p',
+  autoFallbackEngine: true,
+  concurrentFragments: 4,
+  cobaltUrl: '',
+  cobaltApiKey: '',
+  wheelConfig: DEFAULT_WHEEL_CONFIG,
 };
 
 export function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
-    return {...DEFAULT_PREFS, ...JSON.parse(raw)};
+    const parsed = JSON.parse(raw) as Partial<Prefs>;
+    return {
+      ...DEFAULT_PREFS,
+      ...parsed,
+      wheelConfig: {
+        ...DEFAULT_WHEEL_CONFIG,
+        ...(parsed.wheelConfig ?? {}),
+      },
+    };
   } catch {
     return DEFAULT_PREFS;
   }
@@ -46,6 +65,8 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+const MAX_IDB_BLOB_BYTES = 100 * 1024 * 1024; // Avoid choking mobile WebView IndexedDB on multi-hour videos
+
 interface StoredExportRecord {
   id: string;
   name: string;
@@ -54,6 +75,9 @@ interface StoredExportRecord {
   createdAt: number;
   tool: string;
   blob: Blob;
+  nativeUri?: string;
+  nativePath?: string;
+  nativeDirectory?: string;
 }
 
 export async function loadLibraryItems(): Promise<ExportItem[]> {
@@ -70,7 +94,8 @@ export async function loadLibraryItems(): Promise<ExportItem[]> {
         resolve(
           rows.map((r) => ({
             ...r,
-            previewUrl: r.mime.startsWith('image/') ? URL.createObjectURL(r.blob) : undefined,
+            previewUrl:
+              r.mime.startsWith('image/') && r.blob.size > 0 ? URL.createObjectURL(r.blob) : undefined,
           }))
         );
       };
@@ -89,6 +114,10 @@ export async function saveExportItems(items: ExportItem[]): Promise<void> {
       const tx = db.transaction(STORE_EXPORTS, 'readwrite');
       const store = tx.objectStore(STORE_EXPORTS);
       for (const item of items) {
+        const safeBlob =
+          item.blob.size > MAX_IDB_BLOB_BYTES
+            ? new Blob([], {type: item.mime || 'application/octet-stream'})
+            : item.blob;
         store.put({
           id: item.id,
           name: item.name,
@@ -96,7 +125,10 @@ export async function saveExportItems(items: ExportItem[]): Promise<void> {
           size: item.size,
           createdAt: item.createdAt,
           tool: item.tool,
-          blob: item.blob,
+          blob: safeBlob,
+          nativeUri: item.nativeUri,
+          nativePath: item.nativePath,
+          nativeDirectory: item.nativeDirectory,
         } satisfies StoredExportRecord);
       }
       tx.oncomplete = () => resolve();

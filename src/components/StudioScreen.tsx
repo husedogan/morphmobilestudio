@@ -29,6 +29,10 @@ interface StudioScreenProps {
   serverReady: boolean;
   updateInfo?: GithubUpdateInfo | null;
   checkingUpdate?: boolean;
+  activeEngineAction?: 'update' | 'manage';
+  activeEngineSegment?: 'ffmpeg' | 'office' | 'link' | null;
+  onChangeEngineAction?: (action: 'update' | 'manage') => void;
+  onChangeEngineSegment?: (seg: 'ffmpeg' | 'office' | 'link' | null) => void;
   onAddFiles: (files: FileList | File[]) => void;
   onRemoveFile: (id: string) => void;
   onMoveFile: (index: number, delta: -1 | 1) => void;
@@ -50,6 +54,10 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
   serverReady,
   updateInfo = null,
   checkingUpdate = false,
+  activeEngineAction = 'update',
+  activeEngineSegment = null,
+  onChangeEngineAction,
+  onChangeEngineSegment,
   onAddFiles,
   onRemoveFile,
   onMoveFile,
@@ -66,12 +74,22 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
   const docInputRef = useRef<HTMLInputElement>(null);
   const mediaInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [hoveredEngine, setHoveredEngine] = useState<'ffmpeg' | 'office' | 'link' | null>(null);
-  const [pinnedEngine, setPinnedEngine] = useState<'ffmpeg' | 'office' | 'link' | null>(null);
-  const activeEngine = hoveredEngine ?? pinnedEngine;
-  const [hoveredAction, setHoveredAction] = useState<'update' | 'manage' | null>(null);
-  const [pinnedAction, setPinnedAction] = useState<'update' | 'manage' | null>(null);
-  const activeAction = hoveredAction ?? pinnedAction;
+  const [localAction, setLocalAction] = useState<'update' | 'manage'>(activeEngineAction);
+  const [localSegment, setLocalSegment] = useState<'ffmpeg' | 'office' | 'link' | null>(
+    activeEngineSegment
+  );
+
+  const activeAction = onChangeEngineAction ? activeEngineAction : localAction;
+  const setLatchedAction = (next: 'update' | 'manage') => {
+    setLocalAction(next);
+    onChangeEngineAction?.(next);
+  };
+
+  const activeEngine = onChangeEngineSegment ? activeEngineSegment : localSegment;
+  const setLatchedSegment = (next: 'ffmpeg' | 'office' | 'link' | null) => {
+    setLocalSegment(next);
+    onChangeEngineSegment?.(next);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -295,7 +313,7 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
           <ChevronRight className="h-5 w-5 shrink-0 text-[var(--muted)]" />
         </button>
 
-        {/* Recent Exports Shortcut */}
+        {/* Library & History Shortcut */}
         {exportCount > 0 && (
           <button
             type="button"
@@ -304,7 +322,7 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
           >
             <FolderOpen className="h-5 w-5 shrink-0 text-[var(--accent)]" />
             <span className="flex-1 text-sm font-semibold text-[var(--ink)]">
-              {exportCount} {t('Exports', lang)} · {t('Library', lang)}
+              {t('Library', lang)} · {exportCount} {t('HistoryRecords', lang)}
             </span>
             <ChevronRight className="h-5 w-5 shrink-0 text-[var(--muted)]" />
           </button>
@@ -333,16 +351,10 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
           <p className="mt-0.5 text-xs leading-relaxed text-[var(--muted)]">{t('EngineNote', lang)}</p>
         </div>
 
-        {/* Equal-Dimension Squeezable Update & Manage Buttons (Single-Tap Mobile Friendly) */}
-        <div
-          className="mt-4 flex w-full items-stretch gap-2"
-          onPointerLeave={(e) => {
-            if (e.pointerType === 'mouse') setHoveredAction(null);
-          }}
-        >
+        {/* Coupled Fluid Latching Update & Manage Bar (Stays on Last Selected, Never Truncates) */}
+        <div className="mt-4 flex w-full items-stretch gap-2">
           {(updateInfo?.hasUpdate || onCheckUpdate) && (() => {
             const isExpanded = activeAction === 'update';
-            const otherExpanded = activeAction === 'manage';
             const hasUpdate = Boolean(updateInfo?.hasUpdate);
             const label = hasUpdate
               ? t('DownloadUpdate', lang)
@@ -356,38 +368,40 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 aria-expanded={isExpanded}
                 disabled={!hasUpdate && checkingUpdate}
                 onPointerEnter={(e) => {
-                  if (e.pointerType === 'mouse') setHoveredAction('update');
+                  if (e.pointerType === 'mouse') setLatchedAction('update');
                 }}
-                onFocus={() => setHoveredAction('update')}
-                onBlur={() => setHoveredAction(null)}
+                onPointerDown={() => setLatchedAction('update')}
+                onFocus={() => setLatchedAction('update')}
                 onClick={() => {
-                  setPinnedAction('update');
+                  setLatchedAction('update');
                   if (hasUpdate) {
                     onApplyUpdate?.();
                   } else {
                     onCheckUpdate?.();
                   }
                 }}
-                className={`flex min-h-[44px] min-w-0 items-center justify-center overflow-hidden rounded-full transition-all duration-300 ease-out active:scale-[0.98] disabled:opacity-70 ${
-                  hasUpdate ? 'morph-accent-btn shadow-sm' : 'morph-tonal-btn'
-                } ${
-                  isExpanded
-                    ? 'flex-[3.4] gap-2 px-4'
-                    : otherExpanded
-                      ? 'flex-[0.8] gap-0 px-2 opacity-75'
-                      : 'flex-1 gap-1.5 px-3'
+                className={`flex min-h-[46px] min-w-[48px] items-center justify-center overflow-hidden rounded-full border transition-[flex-grow,padding,background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] disabled:opacity-70 ${
+                  hasUpdate
+                    ? isExpanded
+                      ? 'morph-accent-btn flex-[4.5] border-transparent px-3.5 shadow-sm sm:px-4'
+                      : 'morph-accent-btn flex-[0.85] border-transparent px-0 opacity-90 hover:opacity-100'
+                    : isExpanded
+                      ? 'morph-tonal-btn flex-[4.5] px-3.5 shadow-sm sm:px-4'
+                      : 'flex-[0.85] border-[var(--line)]/70 bg-[var(--inset)]/80 px-0 text-[var(--muted)] opacity-90 hover:border-[var(--accent)]/45 hover:text-[var(--ink)] hover:opacity-100'
                 }`}
               >
                 {hasUpdate ? (
                   <Download className="h-4 w-4 shrink-0" />
                 ) : (
                   <RefreshCw
-                    className={`h-4 w-4 shrink-0 text-[var(--accent)] ${checkingUpdate ? 'animate-spin' : ''}`}
+                    className={`h-4 w-4 shrink-0 transition-colors duration-200 ${
+                      isExpanded ? 'text-[var(--accent)]' : 'text-[var(--accent)]/85'
+                    } ${checkingUpdate ? 'animate-spin' : ''}`}
                   />
                 )}
                 <span
-                  className={`truncate whitespace-nowrap text-[11px] font-semibold leading-none transition-all duration-300 ease-out sm:text-xs ${
-                    otherExpanded ? 'max-w-0 opacity-0' : 'max-w-[220px] opacity-100'
+                  className={`overflow-hidden whitespace-nowrap text-xs font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    isExpanded ? 'ml-2 max-w-[225px] opacity-100' : 'ml-0 max-w-0 opacity-0'
                   }`}
                 >
                   {label}
@@ -398,7 +412,6 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
 
           {(() => {
             const isExpanded = activeAction === 'manage';
-            const otherExpanded = activeAction === 'update';
             const label = t('ManageShort', lang);
             return (
               <button
@@ -406,26 +419,24 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 aria-label={t('ManageTools', lang)}
                 aria-expanded={isExpanded}
                 onPointerEnter={(e) => {
-                  if (e.pointerType === 'mouse') setHoveredAction('manage');
+                  if (e.pointerType === 'mouse') setLatchedAction('manage');
                 }}
-                onFocus={() => setHoveredAction('manage')}
-                onBlur={() => setHoveredAction(null)}
+                onPointerDown={() => setLatchedAction('manage')}
+                onFocus={() => setLatchedAction('manage')}
                 onClick={() => {
-                  setPinnedAction('manage');
+                  setLatchedAction('manage');
                   onOpenManageTools();
                 }}
-                className={`flex min-h-[44px] min-w-0 items-center justify-center overflow-hidden rounded-full border transition-all duration-300 ease-out active:scale-[0.98] ${
+                className={`flex min-h-[46px] min-w-[48px] items-center justify-center overflow-hidden rounded-full border transition-[flex-grow,padding,background-color,border-color,color,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] active:scale-[0.98] ${
                   isExpanded
-                    ? 'flex-[3.4] gap-2 border-[var(--accent-end)]/50 bg-[var(--accent-end)]/15 px-4 text-[var(--ink)] shadow-sm'
-                    : otherExpanded
-                      ? 'flex-[0.8] gap-0 border-[var(--line)]/60 bg-[var(--inset)]/70 px-2 text-[var(--muted)] opacity-75 hover:text-[var(--ink)]'
-                      : 'flex-1 gap-1.5 border-[var(--line)] bg-[var(--inset)] px-3 text-[var(--ink)] hover:border-[var(--accent-end)]/50'
+                    ? 'flex-[4.5] border-[var(--accent-end)]/55 bg-[var(--accent-end)]/16 px-4 text-[var(--ink)] shadow-sm'
+                    : 'flex-[0.85] border-[var(--line)]/70 bg-[var(--inset)]/80 px-0 text-[var(--muted)] opacity-90 hover:border-[var(--accent-end)]/45 hover:text-[var(--ink)] hover:opacity-100'
                 }`}
               >
                 <SlidersHorizontal className="h-4 w-4 shrink-0 text-[var(--accent-end)] transition-colors duration-200" />
                 <span
-                  className={`truncate whitespace-nowrap text-[11px] font-semibold leading-none transition-all duration-300 ease-out sm:text-xs ${
-                    otherExpanded ? 'max-w-0 opacity-0' : 'max-w-[160px] opacity-100'
+                  className={`overflow-hidden whitespace-nowrap text-xs font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    isExpanded ? 'ml-2 max-w-[180px] opacity-100' : 'ml-0 max-w-0 opacity-0'
                   }`}
                 >
                   {label}
@@ -435,13 +446,8 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
           })()}
         </div>
 
-        {/* 3 Integrated Squeezable Icon Segments */}
-        <div
-          className="mt-3.5 flex w-full items-stretch gap-1.5 rounded-2xl border border-[var(--line)] bg-[var(--inset)]/50 p-1.5"
-          onPointerLeave={(e) => {
-            if (e.pointerType === 'mouse') setHoveredEngine(null);
-          }}
-        >
+        {/* 3 Integrated Latching Squeezable Icon Segments */}
+        <div className="mt-3.5 flex w-full items-stretch gap-1.5 rounded-2xl border border-[var(--line)] bg-[var(--inset)]/50 p-1.5">
           {(
             [
               {id: 'ffmpeg', label: t('PluginFfmpeg', lang), Icon: Film},
@@ -458,23 +464,22 @@ export const StudioScreen: React.FC<StudioScreenProps> = ({
                 aria-label={label}
                 aria-expanded={isExpanded}
                 onPointerEnter={(e) => {
-                  if (e.pointerType === 'mouse') setHoveredEngine(id);
+                  if (e.pointerType === 'mouse') setLatchedSegment(id);
                 }}
-                onFocus={() => setHoveredEngine(id)}
-                onBlur={() => setHoveredEngine(null)}
-                onClick={() => setPinnedEngine((prev) => (prev === id ? null : id))}
-                className={`flex min-h-[40px] min-w-0 items-center justify-center overflow-hidden rounded-xl border transition-all duration-300 ease-out ${
+                onFocus={() => setLatchedSegment(id)}
+                onClick={() => setLatchedSegment(activeEngine === id ? null : id)}
+                className={`flex min-h-[40px] min-w-0 items-center justify-center overflow-hidden rounded-xl border transition-[flex-grow,padding,background-color,border-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
                   isExpanded
-                    ? 'flex-[3.2] gap-2 border-[var(--accent)]/50 bg-[var(--accent)]/15 px-3 text-[var(--ink)] shadow-sm'
+                    ? 'flex-[3.2] border-[var(--accent)]/50 bg-[var(--accent)]/15 px-3 text-[var(--ink)] shadow-sm'
                     : someoneElseExpanded
-                      ? 'flex-[0.65] gap-0 border-transparent bg-[var(--surface)]/70 px-1 text-[var(--muted)] hover:text-[var(--ink)]'
-                      : 'flex-1 gap-0 border-[var(--line)]/60 bg-[var(--surface)]/80 px-2 text-[var(--accent)] hover:border-[var(--accent)]/40'
+                      ? 'flex-[0.65] border-transparent bg-[var(--surface)]/70 px-1 text-[var(--muted)] hover:text-[var(--ink)]'
+                      : 'flex-1 border-[var(--line)]/60 bg-[var(--surface)]/80 px-2 text-[var(--accent)] hover:border-[var(--accent)]/40'
                 }`}
               >
                 <Icon className={`h-4 w-4 shrink-0 transition-colors duration-200 ${isExpanded ? 'text-[var(--accent)]' : ''}`} />
                 <span
-                  className={`overflow-hidden whitespace-nowrap text-[11px] font-semibold leading-none transition-all duration-300 ease-out ${
-                    isExpanded ? 'max-w-[150px] opacity-100' : 'max-w-0 opacity-0'
+                  className={`overflow-hidden whitespace-nowrap text-[11px] font-semibold leading-none transition-[max-width,margin,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    isExpanded ? 'ml-2 max-w-[150px] opacity-100' : 'ml-0 max-w-0 opacity-0'
                   }`}
                 >
                   {label}

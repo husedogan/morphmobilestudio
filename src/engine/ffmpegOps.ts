@@ -47,7 +47,6 @@ async function getFFmpeg(onStatus?: (msg: string) => void): Promise<FFmpeg> {
     let coreURL = '';
     let wasmURL = '';
     try {
-      // Direct GET (no HEAD request) so Capacitor Android WebView local assets work 100% offline
       [coreURL, wasmURL] = await Promise.all([
         fetchLocalAssetAsBlobUrl(`${localBase}/ffmpeg-core.js`, 'text/javascript'),
         fetchLocalAssetAsBlobUrl(`${localBase}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -149,12 +148,19 @@ async function execSingle(
   }
 }
 
-async function probeDurationSeconds(ffmpeg: FFmpeg, inputName: string): Promise<number> {
+async function probeStreamInfo(
+  ffmpeg: FFmpeg,
+  inputName: string
+): Promise<{durationSec: number; hasAudio: boolean}> {
   let durationSec = 0;
+  let hasAudio = false;
   const logHandler = ({message}: {message: string}) => {
     const m = message.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
     if (m) {
       durationSec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+    }
+    if (/Stream\s+#\d+:\d+.*Audio:/i.test(message)) {
+      hasAudio = true;
     }
   };
   ffmpeg.on('log', logHandler);
@@ -163,7 +169,29 @@ async function probeDurationSeconds(ffmpeg: FFmpeg, inputName: string): Promise<
   } finally {
     ffmpeg.off('log', logHandler);
   }
-  return durationSec;
+  return {durationSec, hasAudio};
+}
+
+function buildAudioEncodeArgs(inName: string, targetFmt: string, outName: string): string[] {
+  if (targetFmt === 'mp3') {
+    return ['-i', inName, '-vn', '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
+  }
+  if (targetFmt === 'm4a') {
+    return ['-i', inName, '-vn', '-c:a', 'aac', '-b:a', '192k', '-y', outName];
+  }
+  if (targetFmt === 'wav') {
+    return ['-i', inName, '-vn', '-c:a', 'pcm_s16le', '-y', outName];
+  }
+  if (targetFmt === 'flac') {
+    return ['-i', inName, '-vn', '-c:a', 'flac', '-y', outName];
+  }
+  if (targetFmt === 'ogg') {
+    return ['-i', inName, '-vn', '-c:a', 'libvorbis', '-q:a', '4', '-y', outName];
+  }
+  if (targetFmt === 'opus') {
+    return ['-i', inName, '-vn', '-c:a', 'libopus', '-b:a', '128k', '-y', outName];
+  }
+  return ['-i', inName, '-vn', '-y', outName];
 }
 
 export async function runLocalFfmpegTool(
@@ -200,6 +228,10 @@ export async function runLocalFfmpegTool(
         const rc = await ffmpeg.exec([
           '-i',
           src,
+          '-vf',
+          'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+          '-pix_fmt',
+          'yuv420p',
           '-c:v',
           'libx264',
           '-preset',
@@ -230,6 +262,58 @@ export async function runLocalFfmpegTool(
       if (ffmpegInstance === ffmpeg && ffmpeg.loaded) {
         for (const f of inputs) await ffmpeg.deleteFile(f.name).catch(() => {});
         for (const n of normalizedNames) await ffmpeg.deleteFile(n).catch(() => {});
+      }
+    }
+  }
+
+  if (toolId === 'audio_join') {
+    const targetFmt = (options.format || 'mp3').toLowerCase();
+    const outName = `${first.baseName}-joined.${targetFmt}`;
+    const inputArgs: string[] = [];
+    const filterInputs: string[] = [];
+    const writtenNames: string[] = [];
+    signal?.addEventListener('abort', onAbortSpecial, {once: true});
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        if (signal?.aborted) throw new Error('Cancelled');
+        onProgress((i / files.length) * 0.35, files[i].name);
+        const fExt = safeExt(files[i], 'mp3');
+        const src = `ajoin_${i}.${fExt}`;
+        writtenNames.push(src);
+        await ffmpeg.writeFile(src, await fetchFile(files[i].file));
+        inputArgs.push('-i', src);
+        filterInputs.push(`[${i}:a]`);
+      }
+
+      const codecArgs =
+        targetFmt === 'wav'
+          ? ['-c:a', 'pcm_s16le']
+          : targetFmt === 'm4a'
+            ? ['-c:a', 'aac', '-b:a', '192k']
+            : ['-c:a', 'libmp3lame', '-q:a', '2'];
+
+      onProgress(0.55, outName);
+      const rc = await ffmpeg.exec([
+        ...inputArgs,
+        '-filter_complex',
+        `${filterInputs.join('')}concat=n=${files.length}:v=0:a=1[outa]`,
+        '-map',
+        '[outa]',
+        ...codecArgs,
+        '-y',
+        outName,
+      ]);
+      if (signal?.aborted) throw new Error('Cancelled');
+      if (rc !== 0) throw new Error('Ses birleştirme tamamlanamadı.');
+      const data = await ffmpeg.readFile(outName);
+      const uint8 = data instanceof Uint8Array ? new Uint8Array(data) : new Uint8Array();
+      await ffmpeg.deleteFile(outName).catch(() => {});
+      return [{name: outName, blob: new Blob([uint8], {type: mimeFromExt(targetFmt)})}];
+    } finally {
+      signal?.removeEventListener('abort', onAbortSpecial);
+      if (ffmpegInstance === ffmpeg && ffmpeg.loaded) {
+        for (const n of writtenNames) await ffmpeg.deleteFile(n).catch(() => {});
       }
     }
   }
@@ -278,7 +362,7 @@ export async function runLocalFfmpegTool(
     try {
       let splitSec = parseTimestampToSeconds(options.start || '');
       if (splitSec <= 0) {
-        const dur = await probeDurationSeconds(ffmpeg, inName);
+        const {durationSec: dur} = await probeStreamInfo(ffmpeg, inName);
         splitSec = dur > 2 ? Math.round((dur / 2) * 10) / 10 : 5;
       }
       onProgress(0.3, p1);
@@ -287,6 +371,10 @@ export async function runLocalFfmpegTool(
         inName,
         '-t',
         String(splitSec),
+        '-vf',
+        'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt',
+        'yuv420p',
         '-c:v',
         'libx264',
         '-preset',
@@ -304,6 +392,10 @@ export async function runLocalFfmpegTool(
         String(splitSec),
         '-i',
         inName,
+        '-vf',
+        'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt',
+        'yuv420p',
         '-c:v',
         'libx264',
         '-preset',
@@ -350,20 +442,73 @@ export async function runLocalFfmpegTool(
       const targetFmt = (options.format || 'mp4').toLowerCase();
       outName = `${first.baseName}.${targetFmt}`;
       if (targetFmt === 'gif') {
-        args = ['-i', inName, '-vf', 'fps=12,scale=480:-1:flags=lanczos', '-y', outName];
-      } else if (targetFmt === 'mp3') {
-        args = ['-i', inName, '-vn', '-ab', '192k', '-y', outName];
+        args = ['-i', inName, '-vf', 'fps=12,scale=480:-2:flags=lanczos', '-y', outName];
+      } else if (['mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus'].includes(targetFmt)) {
+        args = buildAudioEncodeArgs(inName, targetFmt, outName);
       } else if (targetFmt === 'webm') {
         args = ['-i', inName, '-c:v', 'libvpx', '-b:v', '1M', '-c:a', 'libvorbis', '-y', outName];
+      } else if (targetFmt === 'avi') {
+        args = [
+          '-i',
+          inName,
+          '-vf',
+          'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+          '-c:v',
+          'mpeg4',
+          '-q:v',
+          '5',
+          '-c:a',
+          'libmp3lame',
+          '-y',
+          outName,
+        ];
       } else {
-        args = ['-i', inName, '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-y', outName];
+        args = [
+          '-i',
+          inName,
+          '-vf',
+          'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+          '-pix_fmt',
+          'yuv420p',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-c:a',
+          'aac',
+          '-y',
+          outName,
+        ];
       }
+      break;
+    }
+    case 'video_extract_audio': {
+      const targetFmt = (options.format || 'mp3').toLowerCase();
+      outName = `${first.baseName}.${targetFmt}`;
+      args = buildAudioEncodeArgs(inName, targetFmt, outName);
       break;
     }
     case 'video_compress': {
       const crf = options.quality || '28';
       outName = `${first.baseName}-compressed.mp4`;
-      args = ['-i', inName, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crf, '-c:a', 'aac', '-y', outName];
+      args = [
+        '-i',
+        inName,
+        '-vf',
+        'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-crf',
+        crf,
+        '-c:a',
+        'aac',
+        '-y',
+        outName,
+      ];
       break;
     }
     case 'video_mute': {
@@ -381,6 +526,10 @@ export async function runLocalFfmpegTool(
         '-i',
         inName,
         ...(end ? ['-to', end] : []),
+        '-vf',
+        'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt',
+        'yuv420p',
         '-c:v',
         'libx264',
         '-preset',
@@ -395,24 +544,74 @@ export async function runLocalFfmpegTool(
     case 'video_crop': {
       outName = `${first.baseName}-cropped.mp4`;
       const aspect = options.aspect || '1:1';
-      let expr = "crop='min(iw,ih)':'min(iw,ih)'";
-      if (aspect === '16:9') expr = "crop='min(iw,ih*16/9)':'min(ih,iw*9/16)'";
-      if (aspect === '9:16') expr = "crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'";
-      if (aspect === '4:5') expr = "crop='min(iw,ih*4/5)':'min(ih,iw*5/4)'";
-      args = ['-i', inName, '-vf', expr, '-c:v', 'libx264', '-preset', 'ultrafast', '-c:a', 'aac', '-y', outName];
+      let expr = "crop='trunc(min(iw,ih)/2)*2':'trunc(min(iw,ih)/2)*2'";
+      if (aspect === '16:9') expr = "crop='trunc(min(iw,ih*16/9)/2)*2':'trunc(min(ih,iw*9/16)/2)*2'";
+      if (aspect === '9:16') expr = "crop='trunc(min(iw,ih*9/16)/2)*2':'trunc(min(ih,iw*16/9)/2)*2'";
+      if (aspect === '4:5') expr = "crop='trunc(min(iw,ih*4/5)/2)*2':'trunc(min(ih,iw*5/4)/2)*2'";
+      args = [
+        '-i',
+        inName,
+        '-vf',
+        expr,
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-c:a',
+        'aac',
+        '-y',
+        outName,
+      ];
+      break;
+    }
+    case 'video_rotate': {
+      outName = `${first.baseName}-rotated.mp4`;
+      const mode = options.rotateMode || '90';
+      let vf = 'transpose=1';
+      if (mode === '180') vf = 'transpose=1,transpose=1';
+      if (mode === '270') vf = 'transpose=2';
+      if (mode === 'hflip') vf = 'hflip';
+      if (mode === 'vflip') vf = 'vflip';
+      args = [
+        '-i',
+        inName,
+        '-vf',
+        `${vf},scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-c:a',
+        'aac',
+        '-y',
+        outName,
+      ];
       break;
     }
     case 'video_speed': {
       outName = `${first.baseName}-speed.mp4`;
       const speed = Math.min(2, Math.max(0.5, Number(options.speed) || 1.5));
       const setpts = (1 / speed).toFixed(3);
+      await ffmpeg.writeFile(inName, await fetchFile(first.file));
+      let hasAudio = false;
+      try {
+        const info = await probeStreamInfo(ffmpeg, inName);
+        hasAudio = info.hasAudio;
+      } finally {
+        await ffmpeg.deleteFile(inName).catch(() => {});
+      }
       args = [
         '-i',
         inName,
         '-filter:v',
-        `setpts=${setpts}*PTS`,
-        '-filter:a',
-        `atempo=${speed}`,
+        `setpts=${setpts}*PTS,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+        ...(hasAudio ? ['-filter:a', `atempo=${speed}`, '-c:a', 'aac'] : ['-an']),
+        '-pix_fmt',
+        'yuv420p',
         '-c:v',
         'libx264',
         '-preset',
@@ -422,28 +621,165 @@ export async function runLocalFfmpegTool(
       ];
       break;
     }
+    case 'video_reverse': {
+      outName = `${first.baseName}-reversed.mp4`;
+      await ffmpeg.writeFile(inName, await fetchFile(first.file));
+      let hasAudio = false;
+      try {
+        const info = await probeStreamInfo(ffmpeg, inName);
+        hasAudio = info.hasAudio;
+      } finally {
+        await ffmpeg.deleteFile(inName).catch(() => {});
+      }
+      args = [
+        '-i',
+        inName,
+        '-vf',
+        'reverse,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        ...(hasAudio ? ['-af', 'areverse', '-c:a', 'aac'] : ['-an']),
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-y',
+        outName,
+      ];
+      break;
+    }
+    case 'video_boomerang': {
+      outName = `${first.baseName}-boomerang.mp4`;
+      args = [
+        '-i',
+        inName,
+        '-t',
+        '8',
+        '-filter_complex',
+        '[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2,split[f][r];[r]reverse[rv];[f][rv]concat=n=2:v=1:a=0[outv]',
+        '-map',
+        '[outv]',
+        '-an',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-y',
+        outName,
+      ];
+      break;
+    }
+    case 'video_loop': {
+      const loops = Math.min(6, Math.max(2, Number(options.loopCount) || 2));
+      outName = `${first.baseName}-loop-${loops}x.mp4`;
+      args = [
+        '-stream_loop',
+        String(loops - 1),
+        '-i',
+        inName,
+        '-vf',
+        'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-c:a',
+        'aac',
+        '-y',
+        outName,
+      ];
+      break;
+    }
     case 'audio_convert': {
       const targetFmt = (options.format || 'mp3').toLowerCase();
-      outName = `${first.baseName}.${targetFmt}`;
-      args = ['-i', inName, '-vn', '-y', outName];
+      if (targetFmt === 'mp4') {
+        outName = `${first.baseName}-video.mp4`;
+        args = [
+          '-f',
+          'lavfi',
+          '-i',
+          'color=c=0x101D31:s=1280x720:r=24',
+          '-i',
+          inName,
+          '-filter_complex',
+          '[1:a]showwaves=s=1280x260:mode=cline:colors=0xF0788A[sw];[0:v][sw]overlay=0:230[v]',
+          '-map',
+          '[v]',
+          '-map',
+          '1:a',
+          '-c:v',
+          'libx264',
+          '-preset',
+          'ultrafast',
+          '-c:a',
+          'aac',
+          '-shortest',
+          '-y',
+          outName,
+        ];
+      } else {
+        outName = `${first.baseName}.${targetFmt}`;
+        args = buildAudioEncodeArgs(inName, targetFmt, outName);
+      }
       break;
     }
     case 'audio_normalize': {
       outName = `${first.baseName}-normalized.mp3`;
-      args = ['-i', inName, '-af', 'loudnorm', '-y', outName];
+      args = ['-i', inName, '-vn', '-af', 'loudnorm', '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
       break;
     }
     case 'audio_trim': {
-      outName = `${first.baseName}-trimmed.${inExt}`;
+      const outExt = ['mp3', 'm4a', 'wav', 'flac', 'ogg', 'opus'].includes(inExt) ? inExt : 'mp3';
+      outName = `${first.baseName}-trimmed.${outExt}`;
       const start = options.start?.trim() || '0';
       const end = options.end?.trim();
-      args = ['-ss', start, '-i', inName, ...(end ? ['-to', end] : []), '-y', outName];
+      args = ['-ss', start, '-i', inName, ...(end ? ['-to', end] : []), '-vn', '-y', outName];
+      break;
+    }
+    case 'audio_speed': {
+      const mode = options.audioSpeedMode || '1.25';
+      outName = `${first.baseName}-${mode === 'slowed' ? 'slowed' : mode === 'nightcore' ? 'nightcore' : 'tempo'}.mp3`;
+      let af = 'atempo=1.25';
+      if (mode === '0.75') af = 'atempo=0.75';
+      else if (mode === '1.5') af = 'atempo=1.5';
+      else if (mode === '2') af = 'atempo=2.0';
+      else if (mode === 'slowed') af = 'asetrate=44100*0.86,aresample=44100';
+      else if (mode === 'nightcore') af = 'asetrate=44100*1.22,aresample=44100';
+      args = ['-i', inName, '-vn', '-af', af, '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
+      break;
+    }
+    case 'audio_fade': {
+      const fadeD = Math.min(15, Math.max(0.5, Number(options.fadeSec) || 2));
+      outName = `${first.baseName}-fade.mp3`;
+      await ffmpeg.writeFile(inName, await fetchFile(first.file));
+      let dur = 0;
+      try {
+        const info = await probeStreamInfo(ffmpeg, inName);
+        dur = info.durationSec;
+      } finally {
+        await ffmpeg.deleteFile(inName).catch(() => {});
+      }
+      const outStart = dur > fadeD * 2 ? Math.max(0.5, Number((dur - fadeD).toFixed(2))) : 0;
+      const af =
+        outStart > 0
+          ? `afade=t=in:st=0:d=${fadeD},afade=t=out:st=${outStart}:d=${fadeD}`
+          : `afade=t=in:st=0:d=${fadeD}`;
+      args = ['-i', inName, '-vn', '-af', af, '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
+      break;
+    }
+    case 'audio_reverse': {
+      outName = `${first.baseName}-reversed.mp3`;
+      args = ['-i', inName, '-vn', '-af', 'areverse', '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
       break;
     }
     case 'audio_channels': {
       const ch = options.channels === 'stereo' ? '2' : '1';
       outName = `${first.baseName}-${ch === '1' ? 'mono' : 'stereo'}.mp3`;
-      args = ['-i', inName, '-ac', ch, '-y', outName];
+      args = ['-i', inName, '-vn', '-ac', ch, '-c:a', 'libmp3lame', '-q:a', '2', '-y', outName];
       break;
     }
     case 'audio_to_video': {

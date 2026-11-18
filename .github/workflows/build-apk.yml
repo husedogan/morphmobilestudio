@@ -89,8 +89,8 @@ jobs:
           if [ ! -d "android" ]; then
             npx cap add android
           fi
-          node scripts/prepare-android.mjs
           npx cap sync android
+          node scripts/prepare-android.mjs
 
       - name: Build Android APK
         working-directory: android

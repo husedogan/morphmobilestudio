@@ -53,12 +53,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-[var(--ink)] sm:text-3xl">
-            {t('Exports', lang)}
+            {t('Library', lang)}
           </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
             {items.length === 0
               ? t('LibrarySubtitleEmpty', lang)
-              : `${items.length} ${t('Exports', lang)}`}
+              : `${t('HistoryLabel', lang)} · ${items.length} ${t('HistoryRecords', lang)}`}
           </p>
         </div>
 

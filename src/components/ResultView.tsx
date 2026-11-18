@@ -136,18 +136,90 @@ export const ResultView: React.FC<ResultViewProps> = ({
   );
 };
 
-export const ErrorView: React.FC<{message: string; lang: Lang; onDismiss: () => void}> = ({
-  message,
-  lang,
-  onDismiss,
-}) => {
+export const ErrorView: React.FC<{
+  message: string;
+  lang: Lang;
+  onDismiss: () => void;
+  onShowToast?: (msg: string) => void;
+}> = ({message, lang, onDismiss, onShowToast}) => {
+  const [copied, setCopied] = React.useState(false);
+  const [showDetails, setShowDetails] = React.useState(false);
+  const [latestText, setLatestText] = React.useState<string>('');
+
+  React.useEffect(() => {
+    import('../engine/downloadDiagnostics').then((mod) => {
+      const latest = mod.loadDiagnosticReports()[0];
+      if (latest && Date.now() - latest.createdAt < 5 * 60 * 1000) {
+        setLatestText(mod.formatSingleReportText(latest));
+      } else {
+        setLatestText(
+          `=== MORPH HATA RAPORU ===\nMesaj: ${message}\nTarih: ${new Date().toISOString()}\n=========================`
+        );
+      }
+    });
+  }, [message]);
+
+  const handleCopyReport = async () => {
+    const mod = await import('../engine/downloadDiagnostics');
+    const text = latestText || mod.formatDiagnosticSummaryBundle(1);
+    const ok = await mod.copyDiagnosticText(text);
+    if (ok) {
+      setCopied(true);
+      onShowToast?.(t('DiagnosticCopiedToast', lang));
+      setTimeout(() => setCopied(false), 2500);
+    }
+  };
+
+  const handleShareReport = async () => {
+    const mod = await import('../engine/downloadDiagnostics');
+    const text = latestText || mod.formatDiagnosticSummaryBundle(1);
+    await mod.shareDiagnosticText(text);
+  };
+
   return (
-    <div className="mx-auto flex min-h-[70vh] max-w-md flex-col items-center justify-center px-6 text-center">
+    <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-5 py-8 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--inset)] text-[var(--accent)]">
         <AlertTriangle className="h-7 w-7" />
       </div>
       <h2 className="mt-5 text-xl font-bold text-[var(--ink)]">{t('ProcessFailed', lang)}</h2>
-      <p className="mt-2 text-sm text-[var(--muted)]">{message}</p>
+      <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">{message}</p>
+
+      <div className="mt-5 flex w-full max-w-sm flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={handleCopyReport}
+          className="flex min-h-[42px] flex-1 items-center justify-center gap-1.5 rounded-full border border-[var(--accent)]/45 bg-[var(--inset)] px-4 text-xs font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
+        >
+          <Check className={`h-3.5 w-3.5 text-[var(--accent)] ${copied ? 'opacity-100' : 'opacity-70'}`} />
+          <span>{copied ? (lang === 'tr' ? 'Kopyalandı!' : 'Copied!') : t('CopyErrorReportBtn', lang)}</span>
+        </button>
+        <button
+          type="button"
+          onClick={handleShareReport}
+          className="flex min-h-[42px] items-center justify-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--inset)] px-4 text-xs font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)]"
+        >
+          <Share2 className="h-3.5 w-3.5 text-[var(--accent)]" />
+          <span>{t('ShareDiagnosticBtn', lang)}</span>
+        </button>
+      </div>
+
+      {latestText && (
+        <div className="mt-3 w-full max-w-md">
+          <button
+            type="button"
+            onClick={() => setShowDetails((s) => !s)}
+            className="text-xs font-semibold text-[var(--muted)] underline decoration-[var(--line)] underline-offset-4 hover:text-[var(--ink)]"
+          >
+            {showDetails ? t('HideDiagnosticLogs', lang) : t('ShowDiagnosticLogs', lang)}
+          </button>
+          {showDetails && (
+            <pre className="mt-2.5 max-h-48 overflow-auto rounded-2xl border border-[var(--line)] bg-[var(--inset)] p-3 text-left font-mono text-[11px] leading-relaxed text-[var(--muted)] whitespace-pre-wrap break-words">
+              {latestText}
+            </pre>
+          )}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onDismiss}

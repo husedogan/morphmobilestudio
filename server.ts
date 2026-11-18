@@ -4,6 +4,14 @@ import http from 'http';
 import path from 'path';
 import {Readable} from 'stream';
 import {fileURLToPath} from 'url';
+import {
+  BROWSER_USER_AGENT,
+  HttpJsonFetcher,
+  extractYouTubeId,
+  resolveMediaFromHtml,
+  resolvePlatformMedia,
+  rewriteCloudDirectUrl,
+} from './src/engine/mediaUrlResolver';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,6 +21,9 @@ const isProd = process.env.NODE_ENV === 'production';
 async function startServer() {
   const app = express();
   const httpServer = http.createServer(app);
+  // Disable Node's default 5-minute requestTimeout so 2-hour video streams never get terminated mid-download
+  httpServer.requestTimeout = 0;
+  httpServer.headersTimeout = 120_000;
 
   app.get('/api/ping', (_req, res) => {
     res.json({ok: true});
@@ -48,36 +59,58 @@ async function startServer() {
     return false;
   };
 
-  const extractMetaTag = (html: string, names: string[]): string | null => {
-    for (const key of names) {
-      const re1 = new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]+content=["']([^"']+)["']`, 'i');
-      const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${key}["']`, 'i');
-      const m = html.match(re1) || html.match(re2);
-      if (m?.[1]) return m[1].replace(/&amp;/g, '&');
-    }
-    return null;
-  };
-
-  const extractYouTubeId = (rawUrl: string): string | null => {
-    try {
-      const u = new URL(rawUrl);
-      const host = u.hostname.replace(/^www\./, '');
-      if (host === 'youtu.be') return u.pathname.slice(1).split('/')[0] || null;
-      if (host.endsWith('youtube.com')) {
-        if (u.searchParams.get('v')) return u.searchParams.get('v');
-        const m = u.pathname.match(/\/(?:shorts|embed|live)\/([^/?#]+)/);
-        if (m?.[1]) return m[1];
+  const serverHttpFetcher: HttpJsonFetcher = {
+    async fetchText(url: string, headers?: Record<string, string>) {
+      const target = new URL(url);
+      if ((target.protocol !== 'http:' && target.protocol !== 'https:') || isBlockedHost(target.hostname)) {
+        throw new Error('Blocked URL');
       }
-    } catch {
-      return null;
-    }
-    return null;
+      const r = await fetch(target.toString(), {
+        redirect: 'follow',
+        headers: {
+          'User-Agent': BROWSER_USER_AGENT,
+          Accept: 'text/html,application/json,*/*;q=0.8',
+          ...(headers || {}),
+        },
+        signal: AbortSignal.timeout(12000),
+      });
+      return {
+        status: r.status,
+        text: await r.text(),
+        finalUrl: r.url || url,
+        contentType: (r.headers.get('content-type') || '').toLowerCase(),
+      };
+    },
+    async postJson(url: string, body: unknown, headers?: Record<string, string>) {
+      const target = new URL(url);
+      if ((target.protocol !== 'http:' && target.protocol !== 'https:') || isBlockedHost(target.hostname)) {
+        throw new Error('Blocked URL');
+      }
+      const r = await fetch(target.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(headers || {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      });
+      return {status: r.status, text: await r.text()};
+    },
   };
 
-  // Built-in direct & meta media link downloader (no external Python server required)
+  // Built-in social, cloud & direct media link downloader (no external Python server required)
   app.post('/api/download-link', express.json({limit: '32kb'}), async (req, res) => {
+    req.setTimeout(0);
+    res.setTimeout(0);
+    const streamAbort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded) streamAbort.abort();
+    });
+
     const rawUrl = String(req.body?.url || '').trim();
     const mode = String(req.body?.format || 'video').toLowerCase();
+    const preferredQuality = String(req.body?.quality || '').trim() || undefined;
     if (!rawUrl) {
       res.status(400).json({detail: 'Bağlantı adresi boş olamaz.'});
       return;
@@ -85,7 +118,8 @@ async function startServer() {
 
     let parsed: URL;
     try {
-      parsed = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+      const withProto = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+      parsed = new URL(rewriteCloudDirectUrl(withProto));
       if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || isBlockedHost(parsed.hostname)) {
         res.status(400).json({detail: 'Geçersiz veya desteklenmeyen bağlantı adresi.'});
         return;
@@ -95,7 +129,8 @@ async function startServer() {
       return;
     }
 
-    const ytId = extractYouTubeId(parsed.toString());
+    const normalizedUrl = parsed.toString();
+    const ytId = extractYouTubeId(normalizedUrl);
     if (mode === 'thumbnail' && ytId) {
       const maxRes = `https://i.ytimg.com/vi/${ytId}/maxresdefault.jpg`;
       const hqRes = `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`;
@@ -109,60 +144,72 @@ async function startServer() {
     }
 
     try {
-      const upstream = await fetch(parsed.toString(), {
+      const resolvedPlatform = await resolvePlatformMedia(
+        normalizedUrl,
+        mode,
+        serverHttpFetcher,
+        preferredQuality
+      );
+      const initialFetchUrl = resolvedPlatform?.url || normalizedUrl;
+      const initialUrlObj = new URL(initialFetchUrl);
+      if (
+        (initialUrlObj.protocol !== 'http:' && initialUrlObj.protocol !== 'https:') ||
+        isBlockedHost(initialUrlObj.hostname)
+      ) {
+        res.status(400).json({detail: 'Çözümlenen bağlantı adresi geçersiz.'});
+        return;
+      }
+
+      const upstream = await fetch(initialUrlObj.toString(), {
         redirect: 'follow',
-        headers: {'User-Agent': 'Mozilla/5.0 Morph/1.1.6'},
+        signal: streamAbort.signal,
+        headers: {
+          'User-Agent': BROWSER_USER_AGENT,
+          Accept: '*/*',
+          'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7',
+          ...(resolvedPlatform?.headers || {}),
+        },
       });
       if (!upstream.ok) {
-        res.status(502).json({detail: `Uzak sunucu yanıt vermedi (${upstream.status}).`});
+        res.status(502).json({detail: `Uzak sunucu yanıt vermedi (HTTP ${upstream.status}).`});
         return;
       }
       const ct = (upstream.headers.get('content-type') || '').toLowerCase();
       if (ct.includes('text/html') || ct.includes('application/xhtml')) {
         const html = await upstream.text();
-        let mediaUrl: string | null = null;
-        if (mode === 'thumbnail') {
-          mediaUrl = extractMetaTag(html, ['og:image:secure_url', 'og:image', 'twitter:image']);
-        } else if (mode === 'audio') {
-          mediaUrl = extractMetaTag(html, ['og:audio:secure_url', 'og:audio']);
-          if (!mediaUrl) {
-            const audioMatch = html.match(/<audio[^>]+src=["']([^"']+)["']/i);
-            if (audioMatch?.[1]) mediaUrl = audioMatch[1];
-          }
-        } else {
-          mediaUrl = extractMetaTag(html, ['og:video:secure_url', 'og:video:url', 'og:video', 'twitter:player:stream']);
-          if (!mediaUrl) {
-            const vidMatch = html.match(/<(?:video|source)[^>]+src=["']([^"']+)["']/i);
-            if (vidMatch?.[1]) mediaUrl = vidMatch[1];
-          }
-          if (!mediaUrl && mode !== 'video') {
-            mediaUrl = extractMetaTag(html, ['og:image']);
-          }
-        }
+        const mediaUrl = resolveMediaFromHtml(html, mode, upstream.url || initialUrlObj.toString());
 
         if (!mediaUrl) {
           res.status(422).json({
-            detail:
-              'Bu sayfa doğrudan medya akışı sunmuyor. Doğrudan medya bağlantısı (.mp4, .mp3, .jpg, .pdf) yapıştır veya sosyal video kapak görseli için Kapak Görseli modunu seç.',
+            detail: ytId
+              ? 'YouTube bu sunucu ağında doğrulama istedi. Android uygulamasında doğrudan deneyebilir, Kapak Görseli modunu seçebilir veya isteğe bağlı yt-dlp sunucusu bağlayabilirsin.'
+              : 'Bu bağlantıdan doğrudan medya akışı çıkarılamadı. Herkese açık bir video/dosya bağlantısı yapıştır veya Kapak Görseli modunu dene.',
           });
           return;
         }
-        const resolved = new URL(mediaUrl, upstream.url);
+        const resolved = new URL(mediaUrl, upstream.url || initialUrlObj.toString());
         if ((resolved.protocol !== 'http:' && resolved.protocol !== 'https:') || isBlockedHost(resolved.hostname)) {
           res.status(400).json({detail: 'Çözümlenen medya adresi geçersiz.'});
           return;
         }
         const mediaRes = await fetch(resolved.toString(), {
           redirect: 'follow',
-          headers: {'User-Agent': 'Mozilla/5.0 Morph/1.1.6'},
+          headers: {
+            'User-Agent': BROWSER_USER_AGENT,
+            Accept: '*/*',
+          },
         });
         if (!mediaRes.ok || !mediaRes.body) {
           res.status(502).json({detail: 'Medya akışı indirilemedi.'});
           return;
         }
         const mCt = mediaRes.headers.get('content-type') || 'application/octet-stream';
+        if (mCt.toLowerCase().includes('text/html')) {
+          res.status(422).json({detail: 'Bu sayfa gömülü oynatıcı kullanıyor; doğrudan medya akışı bulunamadı.'});
+          return;
+        }
         const mLen = mediaRes.headers.get('content-length');
-        const urlName = path.basename(resolved.pathname) || `morph-download`;
+        const urlName = resolvedPlatform?.suggestedName || path.basename(resolved.pathname) || 'morph-download';
         res.setHeader('Content-Type', mCt);
         if (mLen) res.setHeader('Content-Length', mLen);
         res.setHeader('X-Morph-Filename', encodeURIComponent(urlName));
@@ -172,9 +219,13 @@ async function startServer() {
 
       const len = upstream.headers.get('content-length');
       const disp = upstream.headers.get('content-disposition');
-      const urlName = path.basename(new URL(upstream.url).pathname) || 'morph-download';
+      const urlName =
+        resolvedPlatform?.suggestedName || path.basename(new URL(upstream.url).pathname) || 'morph-download';
       res.setHeader('Content-Type', ct || 'application/octet-stream');
       if (len) res.setHeader('Content-Length', len);
+      if (resolvedPlatform?.expectedBytes) {
+        res.setHeader('X-Morph-Expected-Bytes', String(resolvedPlatform.expectedBytes));
+      }
       if (disp) res.setHeader('Content-Disposition', disp);
       res.setHeader('X-Morph-Filename', encodeURIComponent(urlName));
       if (!upstream.body) {
@@ -183,14 +234,93 @@ async function startServer() {
       }
       Readable.fromWeb(upstream.body as unknown as import('stream/web').ReadableStream).pipe(res);
     } catch (error) {
+      if (streamAbort.signal.aborted) return;
       if (!res.headersSent) {
         res.status(502).json({detail: error instanceof Error ? error.message : 'Bağlantı indirilemedi.'});
       }
     }
   });
 
+  // Safe proxy for user-configured Cobalt API instances (v10 POST / and v7 POST /api/json)
+  app.post('/api/cobalt-proxy', express.json({limit: '32kb'}), async (req, res) => {
+    const rawCobalt = String(req.body?.cobaltUrl || '').trim();
+    const apiKey = String(req.body?.apiKey || '').trim();
+    const v10Payload = req.body?.v10Payload;
+    const v7Payload = req.body?.v7Payload;
+    if (!rawCobalt || !v10Payload) {
+      res.status(400).json({detail: 'Eksik Cobalt yapılandırması.'});
+      return;
+    }
+
+    let cobaltBase: URL;
+    try {
+      const withProto = /^https?:\/\//i.test(rawCobalt) ? rawCobalt : `https://${rawCobalt}`;
+      cobaltBase = new URL(withProto);
+      if ((cobaltBase.protocol !== 'http:' && cobaltBase.protocol !== 'https:') || isBlockedHost(cobaltBase.hostname)) {
+        res.status(400).json({detail: 'Geçersiz veya engellenen Cobalt sunucu adresi.'});
+        return;
+      }
+    } catch {
+      res.status(400).json({detail: 'Geçersiz Cobalt URL biçimi.'});
+      return;
+    }
+
+    const reqHeaders: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'User-Agent': BROWSER_USER_AGENT,
+    };
+    if (apiKey) {
+      reqHeaders.Authorization = apiKey.startsWith('Api-Key ') ? apiKey : `Api-Key ${apiKey}`;
+    }
+
+    try {
+      const v10Url = new URL('/', cobaltBase.origin).toString();
+      const r10 = await fetch(v10Url, {
+        method: 'POST',
+        headers: reqHeaders,
+        body: JSON.stringify(v10Payload),
+        signal: AbortSignal.timeout(20_000),
+      });
+      const t10 = await r10.text();
+      if (r10.ok && t10.trim().startsWith('{')) {
+        res.setHeader('Content-Type', 'application/json');
+        res.status(200).send(t10);
+        return;
+      }
+
+      if (v7Payload) {
+        const v7Url = new URL('/api/json', cobaltBase.origin).toString();
+        const r7 = await fetch(v7Url, {
+          method: 'POST',
+          headers: reqHeaders,
+          body: JSON.stringify(v7Payload),
+          signal: AbortSignal.timeout(20_000),
+        });
+        const t7 = await r7.text();
+        if (r7.ok && t7.trim().startsWith('{')) {
+          res.setHeader('Content-Type', 'application/json');
+          res.status(200).send(t7);
+          return;
+        }
+        res.status(502).json({
+          detail: `Cobalt sunucusu yanıt vermedi (HTTP ${r10.status} / ${r7.status}).`,
+        });
+        return;
+      }
+
+      res.status(502).json({detail: `Cobalt sunucusu hata döndürdü (HTTP ${r10.status}).`});
+    } catch (err) {
+      res.status(502).json({
+        detail: err instanceof Error ? `Cobalt bağlantı hatası: ${err.message}` : 'Cobalt sunucusuna ulaşılamadı.',
+      });
+    }
+  });
+
   // Safe proxy for user's optional external Morph Python server (avoids browser CORS / Mixed Content)
   app.all('/api/morph-proxy', async (req, res) => {
+    req.setTimeout(0);
+    res.setTimeout(0);
     const targetRaw = req.header('x-morph-target-url')?.trim();
     const apiPath = (req.query.path as string | undefined) || '/api/health';
     if (!targetRaw) {
@@ -241,7 +371,7 @@ async function startServer() {
     if (contentType) headers['Content-Type'] = contentType;
 
     const controller = new AbortController();
-    req.on('close', () => {
+    res.on('close', () => {
       if (!res.writableEnded) controller.abort();
     });
 

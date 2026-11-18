@@ -12,7 +12,7 @@ const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 
 export default defineConfig(() => {
   return {
     define: {
-      __MORPH_VERSION__: JSON.stringify(pkg.version || '1.1.7'),
+      __MORPH_VERSION__: JSON.stringify(pkg.version || '1.1.9'),
     },
     plugins: [
       react(),
@@ -62,6 +62,7 @@ export default defineConfig(() => {
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,mjs}'],
           globIgnores: ['ffmpeg/**', 'android-icons/**', 'ic_launcher*.png'],
+          navigateFallbackDenylist: [/^\/api\//, /^\/ffmpeg\//],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           runtimeCaching: [
             {
@@ -109,7 +110,7 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module',
         },
       }),
@@ -152,6 +153,9 @@ export default defineConfig(() => {
         },
       },
     ],
+    worker: {
+      format: 'es' as const,
+    },
     optimizeDeps: {
       exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
     },
